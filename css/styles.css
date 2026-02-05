@@ -1,0 +1,206 @@
+/* =========================================
+   1. VARIABLES Y CONFIGURACIÓN BASE
+   ========================================= */
+:root {
+    /* Paleta de Colores Modernos */
+    --primary: #3b82f6;       /* Azul Principal */
+    --primary-hover: #2563eb;
+    --success: #22c55e;       /* Verde Éxito */
+    --success-hover: #16a34a;
+    --purple: #a855f7;        /* Morado Eventos */
+    --purple-hover: #9333ea;
+    --danger: #ef4444;        /* Rojo Borrar */
+    --danger-hover: #dc2626;
+    
+    /* Fondos y Estructura */
+    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    
+    /* Tipografía */
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    
+    /* UI */
+    --radius: 12px;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-gradient);
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    color: var(--text-main);
+}
+
+/* =========================================
+   2. LAYOUT Y TARJETAS
+   ========================================= */
+.container {
+    max-width: 1400px; /* Más ancho para aprovechar pantallas grandes */
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.header-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;
+}
+
+.title-group { display: flex; align-items: center; gap: 1rem; }
+.title-group h1 { font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text-main); }
+.title-group p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+
+/* Grid Dashboard */
+.grid-dashboard {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;
+}
+
+.dashboard-card {
+    background: var(--surface); border-radius: var(--radius); padding: 2rem;
+    text-align: center; box-shadow: var(--shadow); cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s; position: relative; border: 1px solid transparent;
+}
+.dashboard-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--primary); }
+
+.icon-box {
+    width: 64px; height: 64px; border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; margin: 0 auto 1rem auto;
+}
+
+.badge {
+    display: inline-block; padding: 0.35rem 1rem; border-radius: 9999px;
+    font-size: 0.85rem; font-weight: 600; margin-top: 1rem;
+}
+
+/* =========================================
+   3. TABLAS, BOTONES Y FILTROS
+   ========================================= */
+/* Botones */
+.btn {
+    display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center;
+    padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600;
+    cursor: pointer; border: none; transition: all 0.2s; font-size: 0.95rem;
+}
+.btn:hover { filter: brightness(110%); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+
+.btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.25); }
+.btn-success { background: var(--success); color: white; box-shadow: 0 4px 6px rgba(34, 197, 94, 0.25); }
+.btn-purple { background: var(--purple); color: white; box-shadow: 0 4px 6px rgba(168, 85, 247, 0.25); }
+.btn-white { background: white; border: 1px solid var(--border); color: var(--text-main); }
+.btn-white:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+.btn-icon {
+    background: transparent; border: none; padding: 0.5rem;
+    cursor: pointer; font-size: 1.25rem; color: var(--text-muted); border-radius: 6px; transition: 0.2s;
+}
+.btn-icon:hover { background: #f1f5f9; color: var(--text-main); }
+
+/* Filtros (Nuevo) */
+.filter-bar {
+    background: white; padding: 1rem; border-radius: var(--radius);
+    display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+    box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 1.5rem;
+}
+.search-group {
+    flex: 2; min-width: 250px; display: flex; align-items: center; gap: 0.8rem;
+    border: 1px solid var(--border); padding: 0.6rem 1rem; border-radius: 8px;
+    background: #f8fafc;
+}
+.search-group i { color: var(--text-muted); font-size: 1.1rem; }
+.search-group input { border: none; outline: none; background: transparent; width: 100%; font-size: 0.95rem; }
+
+.filter-select {
+    flex: 1; min-width: 180px; padding: 0.7rem; border-radius: 8px;
+    border: 1px solid var(--border); outline: none; background: white; color: var(--text-main); font-size: 0.95rem;
+}
+.filter-select:focus { border-color: var(--primary); }
+
+/* Tablas */
+.table-container {
+    background: white; border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow-x: auto; border: 1px solid var(--border);
+}
+table { width: 100%; border-collapse: collapse; min-width: 900px; }
+th { background: #f8fafc; text-align: left; padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+td { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-main); }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: #f8fafc; }
+
+/* Status Pills */
+.status-pill { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: capitalize; }
+.status-green { background: #dcfce7; color: #166534; }
+.status-blue { background: #dbeafe; color: #1e40af; }
+.status-yellow { background: #fef9c3; color: #854d0e; }
+.status-red { background: #fee2e2; color: #991b1b; }
+
+/* =========================================
+   4. MODALES Y DIÁLOGOS (NUEVO DISEÑO)
+   ========================================= */
+.hidden { display: none !important; }
+
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); /* Fondo oscuro elegante */
+    backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center;
+    z-index: 2000; padding: 1.5rem;
+}
+
+/* Modal General (Formularios) - MÁS ANCHO */
+.modal-content {
+    background: white; width: 100%; 
+    max-width: 800px; /* <--- Solución para que no se vea apeñuzcado */
+    border-radius: 16px; box-shadow: var(--shadow-lg);
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column; max-height: 90vh;
+}
+
+@keyframes slideUp { from { transform: translateY(20px) scale(0.95); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+
+.modal-header {
+    padding: 1.5rem 2rem; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; background: #f8fafc;
+    border-top-left-radius: 16px; border-top-right-radius: 16px;
+}
+.modal-header h3 { font-size: 1.25rem; font-weight: 700; margin: 0; }
+
+.modal-body { padding: 2rem; overflow-y: auto; }
+
+/* ESTILOS ESPECÍFICOS PARA EL MODAL DE CONFIRMACIÓN (Eliminar) */
+.modal-confirm { 
+    max-width: 420px !important; /* Pequeño y centrado */
+    text-align: center; 
+    border-radius: 20px;
+    overflow: hidden;
+}
+.modal-confirm .modal-body { padding: 2.5rem 2rem; }
+
+.confirm-icon-wrapper {
+    width: 70px; height: 70px; background: #fee2e2; color: #dc2626;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 32px; margin: 0 auto 1.5rem auto;
+}
+.confirm-title { font-size: 1.5rem; font-weight: 700; color: #1e293b; margin-bottom: 0.5rem; }
+.confirm-message { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; line-height: 1.5; }
+
+.confirm-actions { display: flex; gap: 1rem; }
+.confirm-actions button { flex: 1; }
+
+/* Formularios Grid */
+.form-grid { 
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; /* Columnas espaciadas */
+}
+.full-width { grid-column: span 2; }
+
+.form-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+label { font-size: 0.9rem; font-weight: 600; color: #334155; }
+input, select {
+    width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 1rem; background: white; outline: none; transition: 0.2s;
+}
+input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
