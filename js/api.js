@@ -1,82 +1,52 @@
 import { db } from './firebase-config.js';
-import { 
-    collection, getDocs, doc, writeBatch 
-} from "firebase/firestore";
+import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 
-// Nombres de las colecciones en Firestore
-const COLLECTIONS = {
-    items: 'items',
-    areas: 'areas',
-    events: 'events',
-    people: 'people'
-};
+// --- REFERENCIAS A COLECCIONES ---
+const peopleRef = collection(db, "people");
+const itemsRef = collection(db, "items");
+const areasRef = collection(db, "areas");
+const eventsRef = collection(db, "events");
+// NUEVA COLECCIÓN PARA ACTIVIDADES
+const activitiesRef = collection(db, "activities"); 
 
-// --- LEER DATOS (GET) ---
-// Obtiene todas las colecciones y las une en un solo objeto como hacía tu JSON local
+// --- LEER TODO (GET) ---
+// Esta función baja toda la base de datos al iniciar la app
 export async function getDB() {
     try {
-        const [items, areas, events, people] = await Promise.all([
-            getDocs(collection(db, COLLECTIONS.items)),
-            getDocs(collection(db, COLLECTIONS.areas)),
-            getDocs(collection(db, COLLECTIONS.events)),
-            getDocs(collection(db, COLLECTIONS.people))
+        const [pSnap, iSnap, aSnap, eSnap, acSnap] = await Promise.all([
+            getDocs(peopleRef),
+            getDocs(itemsRef),
+            getDocs(areasRef),
+            getDocs(eventsRef),
+            getDocs(activitiesRef) // Descargar actividades
         ]);
 
         return {
-            items: items.docs.map(d => ({ id: d.id, ...d.data() })),
-            areas: areas.docs.map(d => ({ id: d.id, ...d.data() })),
-            events: events.docs.map(d => ({ id: d.id, ...d.data() })),
-            people: people.docs.map(d => ({ id: d.id, ...d.data() }))
+            people: pSnap.docs.map(d => ({id: d.id, ...d.data()})),
+            items: iSnap.docs.map(d => ({id: d.id, ...d.data()})),
+            areas: aSnap.docs.map(d => ({id: d.id, ...d.data()})),
+            events: eSnap.docs.map(d => ({id: d.id, ...d.data()})),
+            activities: acSnap.docs.map(d => ({id: d.id, ...d.data()})) || [] // Array seguro
         };
     } catch (error) {
-        console.error("Error conectando a Firebase:", error);
-        alert("Error de conexión. Revisa tu consola.");
-        return { items: [], areas: [], events: [], people: [] };
+        console.error("Error cargando DB:", error);
+        // Si falla, retornamos arrays vacíos para que la app no explote
+        return { people:[], items:[], areas:[], events:[], activities:[] };
     }
 }
 
-// --- GUARDAR DATOS (SYNC) ---
-// Función genérica inteligente que sincroniza un array local con una colección de Firestore
-async function syncCollection(collectionName, newArray) {
-    const batch = writeBatch(db); // Usamos Batch para que sea atómico y rápido
-    const colRef = collection(db, collectionName);
-    
-    // 1. Obtener estado actual de la BD para saber qué borrar
-    const snapshot = await getDocs(colRef);
-    const dbIds = new Set(snapshot.docs.map(d => d.id));
-    const newIds = new Set(newArray.map(item => String(item.id)));
+// --- FUNCIONES DE GUARDADO (SAVE) ---
+// Guardan el array completo sobrescribiendo documentos (Estrategia simple para este MVP)
 
-    // 2. Identificar qué borrar (está en BD pero no en el nuevo array)
-    snapshot.docs.forEach(docSnap => {
-        if (!newIds.has(docSnap.id)) {
-            batch.delete(doc(db, collectionName, docSnap.id));
-        }
-    });
-
-    // 3. Identificar qué agregar o actualizar
-    newArray.forEach(item => {
-        // Aseguramos que el ID sea string
-        const docRef = doc(db, collectionName, String(item.id));
-        batch.set(docRef, item); // .set sobreescribe o crea
-    });
-
-    // 4. Ejecutar todo junto
-    await batch.commit();
+async function saveCollection(collectionRef, dataArray) {
+    const promises = dataArray.map(item => setDoc(doc(collectionRef, item.id), item));
+    await Promise.all(promises);
 }
 
-// Exportamos las funciones con el mismo nombre que antes para no romper el código
-export async function saveItems(items) {
-    await syncCollection(COLLECTIONS.items, items);
-}
+export async function savePeople(data) { await saveCollection(peopleRef, data); }
+export async function saveItems(data) { await saveCollection(itemsRef, data); }
+export async function saveAreas(data) { await saveCollection(areasRef, data); }
+export async function saveEvents(data) { await saveCollection(eventsRef, data); }
 
-export async function saveEvents(events) {
-    await syncCollection(COLLECTIONS.events, events);
-}
-
-export async function saveAreas(areas) {
-    await syncCollection(COLLECTIONS.areas, areas);
-}
-
-export async function savePeople(people) {
-    await syncCollection(COLLECTIONS.people, people);
-}
+// NUEVA FUNCIÓN DE GUARDADO
+export async function saveActivities(data) { await saveCollection(activitiesRef, data); }

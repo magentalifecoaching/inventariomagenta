@@ -52,11 +52,12 @@ export function renderInventory(container, data, filterFn = null) {
                 <thead>
                     <tr>
                         <th>Ítem</th>
-                        <th>Marca</th> <th>Stock</th>
+                        <th>Marca</th>
+                        <th>Stock</th>
                         <th>Estado</th>
                         <th>Seguimiento</th>
                         <th>Encargado</th>
-                        <th>Ubicación</th>
+                        <th>Ubicación / Actividad</th>
                         <th style="text-align:right;">Acciones</th>
                     </tr>
                 </thead>
@@ -78,11 +79,19 @@ export function renderInventory(container, data, filterFn = null) {
 function renderRow(item, data) {
     const areaName = data.areas.find(a => a.id === item.areaId)?.name || '-';
     const eventName = data.events.find(e => e.id === item.eventId)?.name;
+    const activityName = data.activities ? data.activities.find(a => a.id === item.activityId)?.name : null;
     const personName = data.people.find(p => p.id === item.personId)?.name || '-';
     
-    const location = eventName 
-        ? `<span style="color:var(--purple); font-weight:600; display:flex; align-items:center; gap:4px;"><i class="ph ph-calendar"></i> ${eventName}</span>` 
-        : `<span style="color:var(--text-muted);">${areaName}</span>`;
+    // Lógica de Ubicación: Muestra Evento y Actividad si existe
+    let locationHtml = `<span style="color:var(--text-muted);">${areaName}</span>`;
+    
+    if (eventName) {
+        let subText = activityName ? `<br><span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;">↳ ${activityName}</span>` : '';
+        locationHtml = `<span style="color:var(--purple); font-weight:600; line-height:1.2;">
+            <i class="ph ph-calendar"></i> ${eventName}
+            ${subText}
+        </span>`;
+    }
     
     const statusClass = item.status === 'disponible' ? 'status-green' : (item.status === 'en uso' ? 'status-yellow' : 'status-red');
     const trackClass = item.tracking === 'conseguido' ? 'status-green' : (item.tracking === 'en_proceso' ? 'status-blue' : 'status-yellow');
@@ -95,11 +104,12 @@ function renderRow(item, data) {
         data-area="${item.areaId}">
         
         <td style="font-weight:600; color:var(--text-main);">${item.name}</td>
-        <td style="color:var(--text-muted);">${item.brand || '-'}</td> <td>${item.stock}</td>
+        <td style="color:var(--text-muted);">${item.brand || '-'}</td>
+        <td>${item.stock}</td>
         <td><span class="status-pill ${statusClass}">${item.status || 'N/A'}</span></td>
         <td><span class="status-pill ${trackClass}">${item.tracking ? item.tracking.replace('_', ' ') : '-'}</span></td>
         <td>${personName}</td>
-        <td>${location}</td>
+        <td>${locationHtml}</td>
         <td style="text-align:right;">
             <button onclick="window.modalAddItem('${item.id}')" class="btn-icon" title="Editar">
                 <i class="ph ph-pencil-simple" style="color:var(--primary)"></i>
@@ -124,7 +134,7 @@ function setupFilters() {
 
         rows.forEach(row => {
             const name = row.dataset.name;
-            const brand = row.dataset.brand; // Buscar por marca
+            const brand = row.dataset.brand;
             const person = row.dataset.person;
             const rowStatus = row.dataset.status;
             const rowArea = row.dataset.area;
@@ -161,7 +171,8 @@ window.modalAddItem = (itemId = null) => {
                 </div>
 
                 <div class="form-group">
-                    <label>Marca</label> <input type="text" id="item-brand" value="${item.brand || ''}" placeholder="Ej: Sony, Apple, Bosch...">
+                    <label>Marca</label>
+                    <input type="text" id="item-brand" value="${item.brand || ''}" placeholder="Ej: Sony, Apple, Bosch...">
                 </div>
                 
                 <div class="form-group">
@@ -226,6 +237,13 @@ window.modalAddItem = (itemId = null) => {
                     </div>
                 </div>
 
+                <div class="full-width hidden" id="item-activity-container" style="background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border);">
+                    <label style="color:var(--primary);">↳ Asignar a Actividad del Evento:</label>
+                    <select id="item-activity" style="margin-top:5px;">
+                        <option value="">-- General / Todo el Evento --</option>
+                        </select>
+                </div>
+
                 <div class="full-width" style="margin-top:1rem;">
                     <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; font-size:1.1rem;">
                         Guardar Ítem
@@ -238,13 +256,14 @@ window.modalAddItem = (itemId = null) => {
             const newItem = {
                 id: document.getElementById('item-id').value || Date.now().toString(),
                 name: document.getElementById('item-name').value,
-                brand: document.getElementById('item-brand').value, // Guardar Marca
+                brand: document.getElementById('item-brand').value,
                 stock: parseInt(document.getElementById('item-stock').value),
                 status: document.getElementById('item-status').value,
                 tracking: document.getElementById('item-tracking').value,
                 areaId: document.getElementById('item-area').value,
                 personId: document.getElementById('item-person').value,
-                eventId: document.getElementById('item-event').value || null 
+                eventId: document.getElementById('item-event').value || null,
+                activityId: document.getElementById('item-activity').value || null // NUEVO
             };
             
             const idx = dbData.items.findIndex(i => i.id === newItem.id);
@@ -253,19 +272,56 @@ window.modalAddItem = (itemId = null) => {
             
             await saveItems(dbData.items);
             
-            window.app.showToast("Ítem guardado exitosamente"); // Mensaje Verde
+            window.app.showToast("Ítem guardado exitosamente");
             window.app.reloadCurrentView();
         });
+
+        // --- LÓGICA DINÁMICA DE ACTIVIDADES ---
+        const eventSelect = document.getElementById('item-event');
+        const activitySelect = document.getElementById('item-activity');
+        const activityContainer = document.getElementById('item-activity-container');
+
+        // Función para llenar actividades
+        const populateActivities = (eventId, selectedActId = null) => {
+            activitySelect.innerHTML = '<option value="">-- General / Todo el Evento --</option>';
+            
+            if (!eventId) {
+                activityContainer.classList.add('hidden');
+                return;
+            }
+
+            const eventActivities = (dbData.activities || []).filter(a => a.eventId === eventId);
+            
+            if (eventActivities.length > 0) {
+                eventActivities.forEach(act => {
+                    const opt = document.createElement('option');
+                    opt.value = act.id;
+                    opt.text = `${act.startTime || ''} - ${act.name}`;
+                    if (act.id === selectedActId) opt.selected = true;
+                    activitySelect.appendChild(opt);
+                });
+                activityContainer.classList.remove('hidden');
+            } else {
+                activityContainer.classList.add('hidden');
+            }
+        };
+
+        // Evento cambio
+        eventSelect.addEventListener('change', (e) => populateActivities(e.target.value));
+
+        // Carga inicial (si estamos editando)
+        if (item.eventId) {
+            populateActivities(item.eventId, item.activityId);
+        }
     });
 };
 
-// --- CREACIÓN RÁPIDA (MINI-VENTANA) ---
+// --- CREACIÓN RÁPIDA (MINI-MODAL) ---
 window.quickCreate = (type, targetSelectId) => {
     const container = document.getElementById('quick-create-container');
     let title = '', inputsHtml = '';
     const today = new Date().toISOString().split('T')[0];
 
-    // Definir formulario según tipo
     if (type === 'person') {
         title = 'Nuevo Encargado';
         inputsHtml = `<input type="text" id="quick-input-name" placeholder="Nombre completo" class="quick-input">`;
@@ -283,7 +339,6 @@ window.quickCreate = (type, targetSelectId) => {
         `;
     }
 
-    // Inyectar Mini-Modal (Z-Index alto para estar sobre el otro modal)
     container.innerHTML = `
         <div class="modal-overlay" style="z-index: 3000; background: rgba(0,0,0,0.4);">
             <div class="modal-content" style="max-width: 350px; padding: 1.5rem; border-radius:12px; animation: slideUp 0.2s ease-out;">
@@ -299,17 +354,15 @@ window.quickCreate = (type, targetSelectId) => {
         </div>
     `;
 
-    // Estilos inline para inputs del mini-modal
     const style = document.createElement('style');
     style.innerHTML = `.quick-input { width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; }`;
     container.appendChild(style);
 
-    // Lógica Guardar
     document.getElementById('btn-quick-save').onclick = async () => {
         const name = document.getElementById('quick-input-name').value;
         if (!name) return alert("El nombre es obligatorio");
 
-        const { dbData } = await import('./app.js'); // Import dinámico para asegurar datos frescos
+        const { dbData } = await import('./app.js'); 
         let newId = Date.now().toString();
         let newObj = null;
 
@@ -329,7 +382,6 @@ window.quickCreate = (type, targetSelectId) => {
             await saveEvents(dbData.events);
         }
 
-        // 1. Actualizar el Select del Modal Principal (sin cerrarlo)
         const select = document.getElementById(targetSelectId);
         if (select) {
             const option = document.createElement('option');
@@ -337,12 +389,15 @@ window.quickCreate = (type, targetSelectId) => {
             option.text = newObj.name;
             option.selected = true;
             select.appendChild(option);
+            
+            // Si creamos un evento, disparamos el evento 'change' para que se actualice 
+            // la lista de actividades (que saldrá vacía, pero correcta)
+            if(type === 'event') {
+                select.dispatchEvent(new Event('change'));
+            }
         }
 
-        // 2. Cerrar solo el mini-modal
         document.getElementById('quick-create-container').innerHTML = '';
-
-        // 3. Mostrar Toast Verde
         window.app.showToast(`${title.replace('Nuevo ', '').replace('Nueva ', '')} creado`);
     };
 };
@@ -361,15 +416,21 @@ window.deleteItem = (id) => {
 
 window.downloadInventoryExcel = () => {
     import('./app.js').then(({ dbData }) => {
-        const exportData = dbData.items.map(i => ({
-            Nombre: i.name,
-            Marca: i.brand || '',
-            Stock: i.stock,
-            Estado: i.status,
-            Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A',
-            Area: dbData.areas.find(a => a.id === i.areaId)?.name || 'N/A',
-            Evento: dbData.events.find(e => e.id === i.eventId)?.name || 'N/A'
-        }));
+        const exportData = dbData.items.map(i => {
+            const actName = dbData.activities ? dbData.activities.find(a => a.id === i.activityId)?.name : '';
+            const evtName = dbData.events.find(e => e.id === i.eventId)?.name || 'N/A';
+            
+            return {
+                Nombre: i.name,
+                Marca: i.brand || '',
+                Stock: i.stock,
+                Estado: i.status,
+                Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A',
+                Area: dbData.areas.find(a => a.id === i.areaId)?.name || 'N/A',
+                Evento: evtName,
+                Actividad: actName || 'General' // Nueva columna en Excel
+            };
+        });
         window.app.exportToExcel(exportData, 'Inventario_Completo');
     });
 };

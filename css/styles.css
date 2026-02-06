@@ -38,7 +38,7 @@ body {
 }
 
 .title-group { display: flex; align-items: center; gap: 1rem; }
-.title-group img.app-logo { height: 50px; width: auto; object-fit: contain; } /* Nuevo: Logo */
+.title-group img.app-logo { height: 50px; width: auto; object-fit: contain; }
 .title-group h1 { font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text-main); }
 .title-group p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
 
@@ -53,15 +53,9 @@ body {
 }
 .dashboard-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--primary); }
 
-/* Nuevo: Eventos Finalizados (Gris) */
-.dashboard-card.finished {
-    filter: grayscale(100%);
-    opacity: 0.7;
-}
-.dashboard-card.finished:hover {
-    filter: grayscale(0%); /* Vuelve a color al pasar el mouse */
-    opacity: 1;
-}
+/* Eventos Finalizados */
+.dashboard-card.finished { filter: grayscale(100%); opacity: 0.7; }
+.dashboard-card.finished:hover { filter: grayscale(0%); opacity: 1; }
 
 .icon-box {
     width: 64px; height: 64px; border-radius: 16px;
@@ -123,6 +117,7 @@ td { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); vertical-alig
 .status-pill { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: capitalize; }
 .status-green { background: #dcfce7; color: #166534; }
 .status-yellow { background: #fef9c3; color: #854d0e; }
+.status-blue { background: #dbeafe; color: #1e40af; } /* Nuevo para 'en_proceso' */
 .status-red { background: #fee2e2; color: #991b1b; }
 
 /* =========================================
@@ -173,7 +168,7 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px 
 input[type="color"] { padding: 0.2rem; height: 50px; cursor: pointer; }
 
 /* =========================================
-   7. TOAST NOTIFICATIONS (NUEVO)
+   7. TOAST NOTIFICATIONS
    ========================================= */
 .toast-container {
     position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
@@ -188,3 +183,27 @@ input[type="color"] { padding: 0.2rem; height: 50px; cursor: pointer; }
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* =========================================
+   8. ESTILOS DE CRONOGRAMA Y PESTAÑAS (NUEVO)
+   ========================================= */
+/* Pestañas */
+.tabs-header { display: flex; gap: 1rem; border-bottom: 2px solid var(--border); margin-bottom: 1.5rem; }
+.tab-btn { padding: 0.8rem 1.5rem; background: none; border: none; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; font-size: 1rem; }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-btn:hover { color: var(--text-main); }
+
+/* Línea de Tiempo */
+.timeline { position: relative; padding-left: 2rem; border-left: 2px solid var(--border); margin-left: 1rem; }
+.timeline-item { position: relative; margin-bottom: 2rem; background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow); transition: transform 0.2s; }
+.timeline-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+
+.timeline-dot { position: absolute; left: -2.6rem; top: 1.5rem; width: 20px; height: 20px; background: var(--primary); border: 4px solid #f1f5f9; border-radius: 50%; z-index: 10; }
+
+.timeline-time { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.5rem; display: block; text-transform: uppercase; letter-spacing: 0.05em; }
+.timeline-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 1rem 0; color: var(--text-main); display: flex; align-items: center; gap: 10px; }
+
+/* Lista de items dentro de la actividad */
+.activity-items-list { background: #f8fafc; border-radius: 8px; padding: 0.5rem 1rem; margin-top: 1rem; border: 1px solid var(--border); }
+.activity-item-row { display: flex; justify-content: space-between; padding: 0.8rem 0; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; align-items: center; }
+.activity-item-row:last-child { border-bottom: none; }
