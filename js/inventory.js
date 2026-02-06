@@ -1,11 +1,9 @@
-import { saveItems, savePeople } from './api.js';
+import { saveItems, savePeople, saveAreas, saveEvents } from './api.js';
 
 export function renderInventory(container, data, filterFn = null) {
-    // Si viene un filtro externo (ej: desde el detalle de un Área), lo aplicamos primero
     let items = data.items;
     if (filterFn) items = items.filter(filterFn);
 
-    // Generamos las opciones para el filtro de áreas dinámicamente
     const areaOptions = data.areas.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
 
     const html = `
@@ -33,7 +31,7 @@ export function renderInventory(container, data, filterFn = null) {
         <div class="filter-bar">
             <div class="search-group">
                 <i class="ph ph-magnifying-glass"></i>
-                <input type="text" id="filter-search" placeholder="Buscar por nombre, encargado o código...">
+                <input type="text" id="filter-search" placeholder="Buscar por nombre, marca o encargado...">
             </div>
             
             <select id="filter-status" class="filter-select">
@@ -54,7 +52,7 @@ export function renderInventory(container, data, filterFn = null) {
                 <thead>
                     <tr>
                         <th>Ítem</th>
-                        <th>Stock</th>
+                        <th>Marca</th> <th>Stock</th>
                         <th>Estado</th>
                         <th>Seguimiento</th>
                         <th>Encargado</th>
@@ -69,38 +67,35 @@ export function renderInventory(container, data, filterFn = null) {
             ${items.length === 0 ? '<div style="padding:3rem; text-align:center; color:var(--text-muted);">No hay items para mostrar</div>' : ''}
         </div>
     </div>
+    
+    <div id="quick-create-container"></div>
     `;
     
     container.innerHTML = html;
-    
-    // Activar los eventos de filtrado
     setupFilters();
 }
 
-// Helper para dibujar una fila (lo sacamos para que el código sea más limpio)
 function renderRow(item, data) {
     const areaName = data.areas.find(a => a.id === item.areaId)?.name || '-';
     const eventName = data.events.find(e => e.id === item.eventId)?.name;
     const personName = data.people.find(p => p.id === item.personId)?.name || '-';
     
-    // Lógica visual para la ubicación
     const location = eventName 
         ? `<span style="color:var(--purple); font-weight:600; display:flex; align-items:center; gap:4px;"><i class="ph ph-calendar"></i> ${eventName}</span>` 
         : `<span style="color:var(--text-muted);">${areaName}</span>`;
     
-    // Clases de color
     const statusClass = item.status === 'disponible' ? 'status-green' : (item.status === 'en uso' ? 'status-yellow' : 'status-red');
     const trackClass = item.tracking === 'conseguido' ? 'status-green' : (item.tracking === 'en_proceso' ? 'status-blue' : 'status-yellow');
 
-    // IMPORTANTE: Ponemos los datos en atributos 'data-' para que el filtro los encuentre rápido
     return `
     <tr data-name="${item.name.toLowerCase()}" 
+        data-brand="${(item.brand || '').toLowerCase()}"
         data-person="${personName.toLowerCase()}" 
         data-status="${item.status}" 
         data-area="${item.areaId}">
         
         <td style="font-weight:600; color:var(--text-main);">${item.name}</td>
-        <td>${item.stock}</td>
+        <td style="color:var(--text-muted);">${item.brand || '-'}</td> <td>${item.stock}</td>
         <td><span class="status-pill ${statusClass}">${item.status || 'N/A'}</span></td>
         <td><span class="status-pill ${trackClass}">${item.tracking ? item.tracking.replace('_', ' ') : '-'}</span></td>
         <td>${personName}</td>
@@ -116,7 +111,6 @@ function renderRow(item, data) {
     </tr>`;
 }
 
-// Lógica de Filtrado (Se ejecuta cuando escribes o cambias un select)
 function setupFilters() {
     const searchInput = document.getElementById('filter-search');
     const statusSelect = document.getElementById('filter-status');
@@ -130,12 +124,12 @@ function setupFilters() {
 
         rows.forEach(row => {
             const name = row.dataset.name;
+            const brand = row.dataset.brand; // Buscar por marca
             const person = row.dataset.person;
             const rowStatus = row.dataset.status;
             const rowArea = row.dataset.area;
 
-            // Lógica: Debe cumplir TODAS las condiciones
-            const matchText = name.includes(term) || person.includes(term);
+            const matchText = name.includes(term) || person.includes(term) || brand.includes(term);
             const matchStatus = status === "" || rowStatus === status;
             const matchArea = area === "" || rowArea === area;
 
@@ -152,39 +146,44 @@ function setupFilters() {
     areaSelect.addEventListener('change', filterFn);
 }
 
-// --- MODAL CREAR / EDITAR (CON DISEÑO MEJORADO) ---
+// --- MODAL CREAR / EDITAR ---
 window.modalAddItem = (itemId = null) => {
     import('./app.js').then(({ dbData }) => {
         const item = itemId ? dbData.items.find(i => i.id === itemId) : {};
         
-        // HTML del Formulario usando Grid para que no se vea apretado
         const html = `
             <form id="dynamic-form" class="form-grid">
                 <input type="hidden" id="item-id" value="${item.id || ''}">
                 
-                <div class="full-width">
+                <div class="form-group">
                     <label>Nombre del Ítem</label>
                     <input type="text" id="item-name" value="${item.name || ''}" required placeholder="Ej: Cámara Sony A7">
                 </div>
+
+                <div class="form-group">
+                    <label>Marca</label> <input type="text" id="item-brand" value="${item.brand || ''}" placeholder="Ej: Sony, Apple, Bosch...">
+                </div>
                 
                 <div class="form-group">
-                    <label>Stock (Cantidad)</label>
+                    <label>Stock</label>
                     <input type="number" id="item-stock" value="${item.stock || 1}" required min="1">
                 </div>
                 
                 <div class="form-group">
                     <label>Encargado</label>
                     <div style="display:flex; gap:5px;">
-                        <select id="item-person">
+                        <select id="item-person" style="flex:1;">
                             <option value="">-- Sin asignar --</option>
                             ${dbData.people.map(p => `<option value="${p.id}" ${item.personId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
                         </select>
-                        <button type="button" onclick="window.addPersonPrompt()" class="btn btn-white" title="Nuevo Encargado">+</button>
+                        <button type="button" onclick="window.quickCreate('person', 'item-person')" class="btn btn-white" title="Crear Encargado">
+                            <i class="ph ph-plus" style="color:var(--primary);"></i>
+                        </button>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label>Estado Físico</label>
+                    <label>Estado</label>
                     <select id="item-status">
                         <option value="disponible" ${item.status === 'disponible' ? 'selected' : ''}>🟢 Disponible</option>
                         <option value="en uso" ${item.status === 'en uso' ? 'selected' : ''}>🟡 En uso</option>
@@ -201,74 +200,172 @@ window.modalAddItem = (itemId = null) => {
                     </select>
                 </div>
 
-                <div class="full-width">
-                    <label>Área Perteneciente</label>
-                    <select id="item-area">
-                        <option value="">-- Seleccionar Área --</option>
-                        ${dbData.areas.map(a => `<option value="${a.id}" ${item.areaId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
-                    </select>
+                <div class="form-group">
+                    <label>Área</label>
+                    <div style="display:flex; gap:5px;">
+                        <select id="item-area" style="flex:1;">
+                            <option value="">-- Sin Área --</option>
+                            ${dbData.areas.map(a => `<option value="${a.id}" ${item.areaId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
+                        </select>
+                        <button type="button" onclick="window.quickCreate('area', 'item-area')" class="btn btn-white" title="Crear Área">
+                            <i class="ph ph-plus" style="color:var(--success);"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Evento (Ubicación)</label>
+                    <div style="display:flex; gap:5px;">
+                        <select id="item-event" style="flex:1;">
+                            <option value="">-- Sin Evento --</option>
+                            ${dbData.events.map(e => `<option value="${e.id}" ${item.eventId === e.id ? 'selected' : ''}>${e.name}</option>`).join('')}
+                        </select>
+                        <button type="button" onclick="window.quickCreate('event', 'item-event')" class="btn btn-white" title="Crear Evento">
+                            <i class="ph ph-plus" style="color:var(--purple);"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="full-width" style="margin-top:1rem;">
                     <button type="submit" class="btn btn-primary" style="width:100%; padding:1rem; font-size:1.1rem;">
-                        Guardar Cambios
+                        Guardar Ítem
                     </button>
                 </div>
             </form>
         `;
 
-        // Abrir Modal
         window.app.openModal(itemId ? 'Editar Ítem' : 'Nuevo Ítem', html, async () => {
             const newItem = {
                 id: document.getElementById('item-id').value || Date.now().toString(),
                 name: document.getElementById('item-name').value,
+                brand: document.getElementById('item-brand').value, // Guardar Marca
                 stock: parseInt(document.getElementById('item-stock').value),
                 status: document.getElementById('item-status').value,
                 tracking: document.getElementById('item-tracking').value,
                 areaId: document.getElementById('item-area').value,
                 personId: document.getElementById('item-person').value,
-                eventId: item.eventId || null // Mantenemos evento si ya tenía
+                eventId: document.getElementById('item-event').value || null 
             };
             
-            // Guardar Lógica
             const idx = dbData.items.findIndex(i => i.id === newItem.id);
             if (idx >= 0) dbData.items[idx] = newItem;
             else dbData.items.push(newItem);
             
             await saveItems(dbData.items);
             
-            // Recargar vista sin ir al inicio
+            window.app.showToast("Ítem guardado exitosamente"); // Mensaje Verde
             window.app.reloadCurrentView();
         });
     });
 };
 
-// --- ELIMINAR ÍTEM (Con la nueva Alerta Bonita) ---
-window.deleteItem = (id) => {
-    // Usamos el nuevo sistema de app.confirm
-    window.app.confirm(
-        '¿Eliminar este ítem?',                 // Título
-        'Esta acción borrará el ítem del inventario permanentemente.', // Mensaje
-        'Sí, eliminar',                         // Texto botón
-        'var(--danger)',                        // Color botón (Rojo)
-        async () => {                           // Acción al confirmar
-            import('./app.js').then(async ({ dbData }) => {
-                dbData.items = dbData.items.filter(i => i.id !== id);
-                await saveItems(dbData.items);
-                window.app.reloadCurrentView(); // Recargar vista
-            });
+// --- CREACIÓN RÁPIDA (MINI-VENTANA) ---
+window.quickCreate = (type, targetSelectId) => {
+    const container = document.getElementById('quick-create-container');
+    let title = '', inputsHtml = '';
+    const today = new Date().toISOString().split('T')[0];
+
+    // Definir formulario según tipo
+    if (type === 'person') {
+        title = 'Nuevo Encargado';
+        inputsHtml = `<input type="text" id="quick-input-name" placeholder="Nombre completo" class="quick-input">`;
+    } else if (type === 'area') {
+        title = 'Nueva Área';
+        inputsHtml = `<input type="text" id="quick-input-name" placeholder="Nombre del área" class="quick-input">`;
+    } else if (type === 'event') {
+        title = 'Nuevo Evento Rápido';
+        inputsHtml = `
+            <input type="text" id="quick-input-name" placeholder="Nombre del evento" class="quick-input" style="margin-bottom:10px;">
+            <div style="display:flex; gap:5px;">
+                <input type="date" id="quick-input-start" value="${today}" class="quick-input">
+                <input type="date" id="quick-input-end" value="${today}" class="quick-input">
+            </div>
+        `;
+    }
+
+    // Inyectar Mini-Modal (Z-Index alto para estar sobre el otro modal)
+    container.innerHTML = `
+        <div class="modal-overlay" style="z-index: 3000; background: rgba(0,0,0,0.4);">
+            <div class="modal-content" style="max-width: 350px; padding: 1.5rem; border-radius:12px; animation: slideUp 0.2s ease-out;">
+                <h3 style="margin-top:0; font-size:1.1rem;">${title}</h3>
+                <div style="margin: 1rem 0;">
+                    ${inputsHtml}
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="document.getElementById('quick-create-container').innerHTML = ''" class="btn btn-white" style="flex:1;">Cancelar</button>
+                    <button id="btn-quick-save" class="btn btn-success" style="flex:1;">Crear</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Estilos inline para inputs del mini-modal
+    const style = document.createElement('style');
+    style.innerHTML = `.quick-input { width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; }`;
+    container.appendChild(style);
+
+    // Lógica Guardar
+    document.getElementById('btn-quick-save').onclick = async () => {
+        const name = document.getElementById('quick-input-name').value;
+        if (!name) return alert("El nombre es obligatorio");
+
+        const { dbData } = await import('./app.js'); // Import dinámico para asegurar datos frescos
+        let newId = Date.now().toString();
+        let newObj = null;
+
+        if (type === 'person') {
+            newObj = { id: newId, name };
+            dbData.people.push(newObj);
+            await savePeople(dbData.people);
+        } else if (type === 'area') {
+            newObj = { id: newId, name };
+            dbData.areas.push(newObj);
+            await saveAreas(dbData.areas);
+        } else if (type === 'event') {
+            const start = document.getElementById('quick-input-start').value;
+            const end = document.getElementById('quick-input-end').value;
+            newObj = { id: newId, name, startDate: start, endDate: end, color: '#a855f7' };
+            dbData.events.push(newObj);
+            await saveEvents(dbData.events);
         }
-    );
+
+        // 1. Actualizar el Select del Modal Principal (sin cerrarlo)
+        const select = document.getElementById(targetSelectId);
+        if (select) {
+            const option = document.createElement('option');
+            option.value = newObj.id;
+            option.text = newObj.name;
+            option.selected = true;
+            select.appendChild(option);
+        }
+
+        // 2. Cerrar solo el mini-modal
+        document.getElementById('quick-create-container').innerHTML = '';
+
+        // 3. Mostrar Toast Verde
+        window.app.showToast(`${title.replace('Nuevo ', '').replace('Nueva ', '')} creado`);
+    };
 };
 
-// --- EXCEL ---
+// --- ELIMINAR Y EXCEL ---
+window.deleteItem = (id) => {
+    window.app.confirm('¿Eliminar ítem?', 'No podrás recuperarlo.', 'Eliminar', 'var(--danger)', async () => {
+        import('./app.js').then(async ({ dbData }) => {
+            dbData.items = dbData.items.filter(i => i.id !== id);
+            await saveItems(dbData.items);
+            window.app.showToast("Ítem eliminado");
+            window.app.reloadCurrentView();
+        });
+    });
+};
+
 window.downloadInventoryExcel = () => {
     import('./app.js').then(({ dbData }) => {
         const exportData = dbData.items.map(i => ({
             Nombre: i.name,
+            Marca: i.brand || '',
             Stock: i.stock,
             Estado: i.status,
-            Seguimiento: i.tracking,
             Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A',
             Area: dbData.areas.find(a => a.id === i.areaId)?.name || 'N/A',
             Evento: dbData.events.find(e => e.id === i.eventId)?.name || 'N/A'

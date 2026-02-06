@@ -2,6 +2,8 @@ import { saveEvents, saveItems } from './api.js';
 import { renderInventory } from './inventory.js';
 
 export function renderEventsModule(container, data) {
+    const today = new Date().toISOString().split('T')[0]; // Fecha de hoy (YYYY-MM-DD)
+
     container.innerHTML = `
     <div class="container">
         <div class="header-bar">
@@ -28,10 +30,19 @@ export function renderEventsModule(container, data) {
             ${data.events.map(event => {
                 const count = data.items.filter(i => i.eventId === event.id).length;
                 
+                // Lógica: ¿Está finalizado?
+                // Si hay fecha fin y es menor a hoy, está finalizado.
+                const isFinished = event.endDate && event.endDate < today;
+                const cardClass = isFinished ? 'dashboard-card finished' : 'dashboard-card';
+                const statusLabel = isFinished ? '(Finalizado)' : '';
+                
+                // Color personalizado o default
+                const eventColor = event.color || '#a855f7'; // Morado por defecto
+
                 return `
-                <div class="dashboard-card" style="border-left: 5px solid var(--purple); position: relative;">
+                <div class="${cardClass}" style="border-left: 6px solid ${eventColor}; position: relative;">
                     
-                    <div style="position:absolute; top:15px; right:15px; display:flex; gap:8px;">
+                    <div style="position:absolute; top:15px; right:15px; display:flex; gap:8px; z-index:10;">
                         <button onclick="event.stopPropagation(); window.modalEvent('${event.id}')" class="btn-icon" title="Editar">
                             <i class="ph ph-pencil-simple"></i>
                         </button>
@@ -42,18 +53,22 @@ export function renderEventsModule(container, data) {
 
                     <div onclick="window.viewEventDetail('${event.id}')" style="cursor:pointer;">
                         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:1rem;">
-                            <div class="icon-box" style="background:#f3e8ff; color:var(--purple); margin:0;">
+                            <div class="icon-box" style="background:${eventColor}20; color:${eventColor}; margin:0;">
                                 <i class="ph ph-calendar"></i>
                             </div>
-                            <span style="font-size:0.9rem; font-weight:600; color:#581c87; background:#f3e8ff; padding:4px 10px; border-radius:8px;">
-                                ${event.date || 'Sin fecha'}
-                            </span>
+                            
+                            <div style="text-align:right;">
+                                <span style="font-size:0.8rem; color:var(--text-muted); display:block;">Inicio: ${event.startDate || 'N/A'}</span>
+                                <span style="font-size:0.8rem; color:var(--text-muted); display:block;">Fin: ${event.endDate || 'N/A'}</span>
+                            </div>
                         </div>
                         
-                        <h2 style="text-align:left; font-size:1.4rem; margin-bottom:0.5rem; color:var(--text-main);">${event.name}</h2>
+                        <h2 style="text-align:left; font-size:1.4rem; margin-bottom:0.5rem; color:var(--text-main);">
+                            ${event.name} <span style="font-size:0.9rem; color:var(--text-muted); font-weight:400;">${statusLabel}</span>
+                        </h2>
                         
                         <div style="text-align:left;">
-                             <span class="badge" style="background:#f3e8ff; color:#6b21a8; margin:0; border:1px solid #d8b4fe;">
+                             <span class="badge" style="background:${eventColor}20; color:${eventColor}; margin:0; border:1px solid ${eventColor}40;">
                                 ${count} items asignados
                              </span>
                         </div>
@@ -73,13 +88,17 @@ export function renderEventsModule(container, data) {
 // 1. Descargar Excel
 window.downloadEventsExcel = () => {
     import('./app.js').then(({ dbData }) => {
-        const dataToExport = dbData.items.filter(i => i.eventId).map(i => ({
-            Evento: dbData.events.find(e => e.id === i.eventId)?.name || 'Desconocido',
-            Fecha: dbData.events.find(e => e.id === i.eventId)?.date || '-',
-            Item: i.name,
-            Stock: i.stock,
-            Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A'
-        }));
+        const dataToExport = dbData.items.filter(i => i.eventId).map(i => {
+            const evt = dbData.events.find(e => e.id === i.eventId);
+            return {
+                Evento: evt?.name || 'Desconocido',
+                Inicio: evt?.startDate || '-',
+                Fin: evt?.endDate || '-',
+                Item: i.name,
+                Stock: i.stock,
+                Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A'
+            };
+        });
 
         if(dataToExport.length === 0) {
             alert("No hay items asignados a eventos.");
@@ -89,7 +108,7 @@ window.downloadEventsExcel = () => {
     });
 };
 
-// 2. Modal Crear / Editar (Diseño Form Grid)
+// 2. Modal Crear / Editar (CON FECHAS Y COLOR)
 window.modalEvent = (id = null) => {
     import('./app.js').then(({ dbData }) => {
         const event = id ? dbData.events.find(e => e.id === id) : {};
@@ -98,15 +117,26 @@ window.modalEvent = (id = null) => {
             <form id="dynamic-form" class="form-grid">
                 <input type="hidden" id="event-id" value="${event.id || ''}">
                 
-                <div class="full-width">
-                    <label>Nombre del Evento</label>
-                    <input type="text" id="event-name" value="${event.name || ''}" required 
-                           placeholder="Ej: Conferencia Anual, Grabación Spot...">
+                <div class="full-width" style="display:flex; gap:1rem;">
+                    <div style="flex:1;">
+                        <label>Nombre del Evento</label>
+                        <input type="text" id="event-name" value="${event.name || ''}" required 
+                            placeholder="Ej: Conferencia Anual">
+                    </div>
+                    <div style="width:80px;">
+                        <label>Color</label>
+                        <input type="color" id="event-color" value="${event.color || '#a855f7'}" style="height:48px; padding:2px;">
+                    </div>
                 </div>
                 
                 <div class="form-group">
-                    <label>Fecha del Evento</label>
-                    <input type="date" id="event-date" value="${event.date || ''}" required>
+                    <label>Fecha Inicio</label>
+                    <input type="date" id="event-start" value="${event.startDate || ''}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Fecha Finalización</label>
+                    <input type="date" id="event-end" value="${event.endDate || ''}" required>
                 </div>
                 
                 <div class="full-width" style="margin-top:1rem;">
@@ -118,10 +148,21 @@ window.modalEvent = (id = null) => {
         `;
 
         window.app.openModal(id ? 'Editar Evento' : 'Nuevo Evento', html, async () => {
+            const startDate = document.getElementById('event-start').value;
+            const endDate = document.getElementById('event-end').value;
+
+            // Validación simple de fechas
+            if(startDate > endDate) {
+                alert("La fecha de inicio no puede ser posterior a la fecha final.");
+                return; // Detiene el guardado pero NO cierra el modal (porque onSaveCallback es controlado)
+            }
+
             const newEvent = { 
                 id: document.getElementById('event-id').value || Date.now().toString(), 
                 name: document.getElementById('event-name').value, 
-                date: document.getElementById('event-date').value 
+                startDate: startDate,
+                endDate: endDate,
+                color: document.getElementById('event-color').value
             };
             
             const idx = dbData.events.findIndex(e => e.id === newEvent.id);
@@ -129,36 +170,42 @@ window.modalEvent = (id = null) => {
             else dbData.events.push(newEvent);
             
             await saveEvents(dbData.events);
+            
+            // Usamos el Toast nuevo y recargamos
+            window.app.showToast("Evento guardado correctamente");
+            
+            // IMPORTANTE: Cerrar modal manual porque detuvimos el flujo automático en app.js para validaciones
+            window.app.closeModal(); 
             window.app.reloadCurrentView();
         });
     });
 };
 
-// 3. Eliminar Evento (Con Alerta Bonita)
+// 3. Eliminar Evento
 window.deleteEvent = (id) => {
     window.app.confirm(
         '¿Eliminar evento?', 
-        'Los items asignados NO se borrarán, pero serán liberados (volverán a estar disponibles).', 
+        'Los items serán liberados, no borrados.', 
         'Sí, eliminar', 
         'var(--danger)', 
         async () => {
             import('./app.js').then(async ({ dbData }) => {
-                // Borrar evento
                 dbData.events = dbData.events.filter(e => e.id !== id);
                 await saveEvents(dbData.events);
                 
-                // Liberar items (Cascada)
+                // Liberar items
                 let modified = false;
                 dbData.items.forEach(item => { 
                     if(item.eventId === id) { 
                         item.eventId = null; 
-                        item.status = 'disponible'; // Resetear estado
+                        item.status = 'disponible'; 
                         modified = true; 
                     } 
                 });
                 
                 if(modified) await saveItems(dbData.items);
                 
+                window.app.showToast("Evento eliminado");
                 window.app.reloadCurrentView();
             });
         }
@@ -172,20 +219,23 @@ window.viewEventDetail = (id) => {
         if(!event) return;
 
         const container = document.getElementById('main-layout');
+        const color = event.color || '#a855f7';
 
         container.innerHTML = `
         <div class="container">
             <div class="header-bar">
                 <div class="title-group">
                     <button onclick="app.showModule('events')" class="btn btn-white">
-                        <i class="ph ph-caret-left"></i> Volver a Eventos
+                        <i class="ph ph-caret-left"></i> Volver
                     </button>
                     <div>
-                        <h1>${event.name}</h1>
-                        <p><i class="ph ph-calendar"></i> ${event.date}</p>
+                        <h1 style="color:${color}">${event.name}</h1>
+                        <p>
+                            <i class="ph ph-calendar"></i> ${event.startDate} al ${event.endDate}
+                        </p>
                     </div>
                 </div>
-                <button onclick="window.assignItemsToEvent('${id}')" class="btn btn-purple">
+                <button onclick="window.assignItemsToEvent('${id}')" class="btn" style="background:${color}; color:white;">
                     <i class="ph ph-check-square-offset"></i> Asignar Items
                 </button>
             </div>
@@ -196,7 +246,7 @@ window.viewEventDetail = (id) => {
                     if(count === 0) return '';
                     return `
                         <div style="background:white; padding:6px 14px; border-radius:20px; border:1px solid var(--border); font-size:0.85rem; color:var(--text-muted);">
-                            <strong>${area.name}:</strong> ${count}
+                            <strong style="color:${color}">${area.name}:</strong> ${count}
                         </div>
                     `;
                 }).join('')}
@@ -213,7 +263,6 @@ window.viewEventDetail = (id) => {
             (item) => item.eventId === id
         );
 
-        // Limpieza visual
         setTimeout(() => {
             const innerHeader = document.querySelector('#event-inventory-wrapper .header-bar');
             if(innerHeader) innerHeader.style.display = 'none';
@@ -224,10 +273,13 @@ window.viewEventDetail = (id) => {
 // 5. Asignación Masiva
 window.assignItemsToEvent = (eventId) => {
     import('./app.js').then(({ dbData }) => {
+        const event = dbData.events.find(e => e.id === eventId);
+        const color = event.color || 'var(--purple)';
+
         const availableItems = dbData.items.filter(i => !i.eventId);
         
         if(availableItems.length === 0) {
-            alert("No hay items disponibles en el inventario general.");
+            window.app.showToast("No hay items disponibles");
             return;
         }
 
@@ -238,7 +290,7 @@ window.assignItemsToEvent = (eventId) => {
                     const areaName = dbData.areas.find(a => a.id === item.areaId)?.name || 'Sin área';
                     return `
                     <label style="display:flex; align-items:center; padding:12px; border-bottom:1px solid var(--border); cursor:pointer; background:white;">
-                        <input type="checkbox" class="item-check" value="${item.id}" style="width:1.2rem; height:1.2rem; margin-right:15px; accent-color:var(--purple);">
+                        <input type="checkbox" class="item-check" value="${item.id}" style="width:1.2rem; height:1.2rem; margin-right:15px; accent-color:${color};">
                         <div style="flex:1;">
                             <div style="font-weight:600;">${item.name}</div>
                             <div style="font-size:0.85rem; color:var(--text-muted); display:flex; justify-content:space-between;">
@@ -251,7 +303,7 @@ window.assignItemsToEvent = (eventId) => {
                 }).join('')}
             </div>
             <div style="margin-top:1.5rem;">
-                <button type="submit" class="btn btn-purple" style="width:100%; padding:1rem;">Confirmar Asignación</button>
+                <button type="submit" class="btn" style="background:${color}; color:white; width:100%; padding:1rem;">Confirmar Asignación</button>
             </div>
         `;
 
@@ -259,6 +311,11 @@ window.assignItemsToEvent = (eventId) => {
             const checks = document.querySelectorAll('.item-check:checked');
             const ids = Array.from(checks).map(c => c.value);
             
+            if(ids.length === 0) {
+                 window.app.closeModal(); // Cerrar si no selecciona nada
+                 return;
+            }
+
             let modified = false;
             dbData.items.forEach(item => {
                 if(ids.includes(item.id)) {
@@ -270,7 +327,8 @@ window.assignItemsToEvent = (eventId) => {
 
             if(modified) {
                 await saveItems(dbData.items);
-                // Aquí llamamos directamente a la vista de detalle para refrescar
+                window.app.showToast(`${ids.length} items asignados`);
+                window.app.closeModal(); // Cerramos modal manual
                 await window.app.refreshData();
                 window.viewEventDetail(eventId); 
             }
