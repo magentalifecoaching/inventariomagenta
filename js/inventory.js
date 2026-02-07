@@ -19,6 +19,9 @@ export function renderInventory(container, data, filterFn = null) {
                 </div>
             </div>
             <div style="display:flex; gap:10px;">
+                <button onclick="window.importFromExcel()" class="btn btn-white">
+                    <i class="ph ph-upload"></i> Importar
+                </button>
                 <button onclick="window.downloadInventoryExcel()" class="btn btn-success">
                     <i class="ph ph-microsoft-excel-logo"></i> Excel
                 </button>
@@ -97,20 +100,20 @@ function renderRow(item, data) {
     const trackClass = item.tracking === 'conseguido' ? 'status-green' : (item.tracking === 'en_proceso' ? 'status-blue' : 'status-yellow');
 
     return `
-    <tr data-name="${item.name.toLowerCase()}" 
+    <tr data-name="${item.name.toLowerCase()}"
         data-brand="${(item.brand || '').toLowerCase()}"
-        data-person="${personName.toLowerCase()}" 
-        data-status="${item.status}" 
+        data-person="${personName.toLowerCase()}"
+        data-status="${item.status}"
         data-area="${item.areaId}">
-        
-        <td style="font-weight:600; color:var(--text-main);">${item.name}</td>
-        <td style="color:var(--text-muted);">${item.brand || '-'}</td>
-        <td>${item.stock}</td>
-        <td><span class="status-pill ${statusClass}">${item.status || 'N/A'}</span></td>
-        <td><span class="status-pill ${trackClass}">${item.tracking ? item.tracking.replace('_', ' ') : '-'}</span></td>
-        <td>${personName}</td>
-        <td>${locationHtml}</td>
-        <td style="text-align:right;">
+
+        <td data-label="Ítem" style="font-weight:600; color:var(--text-main);">${item.name}</td>
+        <td data-label="Marca" style="color:var(--text-muted);">${item.brand || '-'}</td>
+        <td data-label="Stock">${item.stock}</td>
+        <td data-label="Estado"><span class="status-pill ${statusClass}">${item.status || 'N/A'}</span></td>
+        <td data-label="Seguimiento"><span class="status-pill ${trackClass}">${item.tracking ? item.tracking.replace('_', ' ') : '-'}</span></td>
+        <td data-label="Encargado">${personName}</td>
+        <td data-label="Ubicación">${locationHtml}</td>
+        <td data-label="Acciones" class="actions-cell">
             <button onclick="window.modalAddItem('${item.id}')" class="btn-icon" title="Editar">
                 <i class="ph ph-pencil-simple" style="color:var(--primary)"></i>
             </button>
@@ -419,7 +422,7 @@ window.downloadInventoryExcel = () => {
         const exportData = dbData.items.map(i => {
             const actName = dbData.activities ? dbData.activities.find(a => a.id === i.activityId)?.name : '';
             const evtName = dbData.events.find(e => e.id === i.eventId)?.name || 'N/A';
-            
+
             return {
                 Nombre: i.name,
                 Marca: i.brand || '',
@@ -428,9 +431,215 @@ window.downloadInventoryExcel = () => {
                 Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A',
                 Area: dbData.areas.find(a => a.id === i.areaId)?.name || 'N/A',
                 Evento: evtName,
-                Actividad: actName || 'General' // Nueva columna en Excel
+                Actividad: actName || 'General'
             };
         });
         window.app.exportToExcel(exportData, 'Inventario_Completo');
     });
+};
+
+// --- IMPORTAR DESDE EXCEL ---
+window.importFromExcel = () => {
+    const html = `
+        <div class="import-excel-container">
+            <div class="import-dropzone" id="import-dropzone">
+                <i class="ph ph-file-xls" style="font-size:3rem; color:var(--success);"></i>
+                <p style="font-weight:600; margin:1rem 0 0.5rem;">Arrastra un archivo Excel aquí</p>
+                <p style="color:var(--text-muted); font-size:0.9rem;">o haz clic para seleccionar</p>
+                <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none;">
+            </div>
+
+            <div class="import-info" style="margin-top:1rem; padding:1rem; background:#f0fdf4; border-radius:8px; border:1px solid #bbf7d0;">
+                <p style="margin:0; font-size:0.85rem; color:#166534;">
+                    <i class="ph ph-info"></i> <strong>Columnas esperadas:</strong> Nombre, Marca, Stock, Estado, Encargado, Área
+                </p>
+            </div>
+
+            <div id="import-preview" class="hidden" style="margin-top:1.5rem;">
+                <h4 style="margin-bottom:1rem;">Vista Previa (<span id="preview-count">0</span> ítems)</h4>
+                <div class="table-container" style="max-height:300px; overflow-y:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Marca</th>
+                                <th>Stock</th>
+                                <th>Estado</th>
+                                <th>Encargado</th>
+                                <th>Área</th>
+                            </tr>
+                        </thead>
+                        <tbody id="import-preview-body"></tbody>
+                    </table>
+                </div>
+                <button onclick="window.confirmImport()" class="btn btn-success" style="width:100%; margin-top:1rem; padding:1rem;">
+                    <i class="ph ph-check-circle"></i> Confirmar Importación
+                </button>
+            </div>
+        </div>
+    `;
+
+    window.app.openModal('Importar desde Excel', html, () => {});
+
+    // Setup dropzone
+    const dropzone = document.getElementById('import-dropzone');
+    const fileInput = document.getElementById('excel-file-input');
+
+    dropzone.onclick = () => fileInput.click();
+
+    dropzone.ondragover = (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = 'var(--success)';
+        dropzone.style.background = '#f0fdf4';
+    };
+
+    dropzone.ondragleave = () => {
+        dropzone.style.borderColor = 'var(--border)';
+        dropzone.style.background = '';
+    };
+
+    dropzone.ondrop = (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = 'var(--border)';
+        dropzone.style.background = '';
+        const file = e.dataTransfer.files[0];
+        if (file) processExcelFile(file);
+    };
+
+    fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) processExcelFile(file);
+    };
+};
+
+let pendingImportData = [];
+
+function processExcelFile(file) {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+            if (jsonData.length === 0) {
+                alert('El archivo está vacío o no tiene el formato correcto.');
+                return;
+            }
+
+            // Normalizar columnas (buscar variantes comunes)
+            pendingImportData = jsonData.map(row => ({
+                name: row.Nombre || row.nombre || row.Name || row.name || '',
+                brand: row.Marca || row.marca || row.Brand || row.brand || '',
+                stock: parseInt(row.Stock || row.stock || row.Cantidad || row.cantidad || 1) || 1,
+                status: normalizeStatus(row.Estado || row.estado || row.Status || row.status || 'disponible'),
+                personName: row.Encargado || row.encargado || row.Person || row.person || '',
+                areaName: row.Área || row.Area || row.area || row.área || ''
+            })).filter(item => item.name);
+
+            // Mostrar preview
+            const previewContainer = document.getElementById('import-preview');
+            const previewBody = document.getElementById('import-preview-body');
+            const previewCount = document.getElementById('preview-count');
+
+            previewCount.textContent = pendingImportData.length;
+            previewBody.innerHTML = pendingImportData.slice(0, 10).map(item => `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>${item.brand}</td>
+                    <td>${item.stock}</td>
+                    <td>${item.status}</td>
+                    <td>${item.personName}</td>
+                    <td>${item.areaName}</td>
+                </tr>
+            `).join('');
+
+            if (pendingImportData.length > 10) {
+                previewBody.innerHTML += `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">... y ${pendingImportData.length - 10} más</td></tr>`;
+            }
+
+            previewContainer.classList.remove('hidden');
+            document.getElementById('import-dropzone').style.display = 'none';
+
+        } catch (error) {
+            console.error('Error procesando Excel:', error);
+            alert('Error al procesar el archivo. Verifica que sea un archivo Excel válido.');
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+function normalizeStatus(status) {
+    const s = (status || '').toLowerCase().trim();
+    if (s.includes('disponible') || s.includes('available')) return 'disponible';
+    if (s.includes('uso') || s.includes('use')) return 'en uso';
+    if (s.includes('manten') || s.includes('repair')) return 'mantenimiento';
+    return 'disponible';
+}
+
+window.confirmImport = async () => {
+    if (pendingImportData.length === 0) return;
+
+    const { dbData } = await import('./app.js');
+
+    // Crear personas y áreas si no existen
+    const existingPeople = new Map(dbData.people.map(p => [p.name.toLowerCase(), p.id]));
+    const existingAreas = new Map(dbData.areas.map(a => [a.name.toLowerCase(), a.id]));
+
+    const newItems = pendingImportData.map(item => {
+        // Buscar o crear persona
+        let personId = '';
+        if (item.personName) {
+            const key = item.personName.toLowerCase();
+            if (existingPeople.has(key)) {
+                personId = existingPeople.get(key);
+            } else {
+                personId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                dbData.people.push({ id: personId, name: item.personName });
+                existingPeople.set(key, personId);
+            }
+        }
+
+        // Buscar o crear área
+        let areaId = '';
+        if (item.areaName) {
+            const key = item.areaName.toLowerCase();
+            if (existingAreas.has(key)) {
+                areaId = existingAreas.get(key);
+            } else {
+                areaId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                dbData.areas.push({ id: areaId, name: item.areaName });
+                existingAreas.set(key, areaId);
+            }
+        }
+
+        return {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            name: item.name,
+            brand: item.brand,
+            stock: item.stock,
+            status: item.status,
+            tracking: 'conseguido',
+            personId: personId,
+            areaId: areaId,
+            eventId: null,
+            activityId: null
+        };
+    });
+
+    // Guardar todo
+    dbData.items = [...dbData.items, ...newItems];
+
+    await saveItems(dbData.items);
+    await import('./api.js').then(api => api.savePeople(dbData.people));
+    await import('./api.js').then(api => api.saveAreas(dbData.areas));
+
+    pendingImportData = [];
+    window.app.closeModal();
+    window.app.showToast(`${newItems.length} ítems importados exitosamente`);
+    window.app.reloadCurrentView();
 };

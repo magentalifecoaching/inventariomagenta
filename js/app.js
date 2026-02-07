@@ -2,14 +2,16 @@
 // 1. IMPORTACIONES
 // =========================================
 import { db, auth, provider, signInWithPopup, signOut } from './firebase-config.js';
-import { onAuthStateChanged } from "firebase/auth"; 
+import { onAuthStateChanged } from "firebase/auth";
 
-// AHORA IMPORTAMOS TAMBIÉN saveActivities
 import { getDB, savePeople, saveActivities } from './api.js';
 
 import { renderInventory } from './inventory.js';
 import { renderAreasModule } from './areas.js';
 import { renderEventsModule } from './events.js';
+import { renderSuppliersModule } from './suppliers.js';
+import { renderStatsModule } from './stats.js';
+import { renderCalendarModule } from './calendar.js';
 
 // =========================================
 // 2. ESTADO GLOBAL
@@ -101,21 +103,55 @@ function renderMenu() {
     const itemsCount = dbData.items ? dbData.items.length : 0;
     const areasCount = dbData.areas ? dbData.areas.length : 0;
     const eventsCount = dbData.events ? dbData.events.length : 0;
+    const suppliersCount = dbData.suppliers ? dbData.suppliers.length : 0;
 
     container.innerHTML = `
     <div class="container">
-        <div style="text-align:center; margin-bottom:3rem; margin-top:2rem;">
+        <div style="text-align:center; margin-bottom:2rem; margin-top:2rem; position:relative;">
+            <button onclick="window.globalSearch()" class="global-search-btn" title="Buscar (Ctrl+K)">
+                <i class="ph ph-magnifying-glass"></i>
+            </button>
             <img src="${window.APP_CONFIG.logoUrl}" style="width:100px; margin-bottom:1rem;">
             <h1 style="font-size:2.5rem; color:var(--text-main); font-weight:800;">Panel de Control</h1>
             <p style="color:var(--text-muted); font-size:1.1rem;">Gestión de recursos y logística</p>
         </div>
-        
+
         <div class="grid-dashboard">
+            <div class="dashboard-card" onclick="app.showModule('stats')">
+                <div class="icon-box" style="background:#fef3c7; color:#d97706;">
+                    <i class="ph ph-chart-pie"></i>
+                </div>
+                <h2 style="font-size:1.4rem;">Dashboard</h2>
+                <span class="badge" style="background:#fef3c7; color:#92400e;">
+                    Estadísticas
+                </span>
+            </div>
+
+            <div class="dashboard-card" onclick="app.showModule('calendar')">
+                <div class="icon-box" style="background:#faf5ff; color:var(--purple);">
+                    <i class="ph ph-calendar"></i>
+                </div>
+                <h2 style="font-size:1.4rem;">Calendario</h2>
+                <span class="badge" style="background:#f3e8ff; color:#6b21a8;">
+                    Vista mensual
+                </span>
+            </div>
+
+            <div class="dashboard-card" onclick="app.showModule('suppliers')">
+                <div class="icon-box" style="background:#ecfdf5; color:#10b981;">
+                    <i class="ph ph-factory"></i>
+                </div>
+                <h2 style="font-size:1.4rem;">Proveedores</h2>
+                <span class="badge" style="background:#d1fae5; color:#065f46;">
+                    ${suppliersCount} proveedores
+                </span>
+            </div>
+
             <div class="dashboard-card" onclick="app.showModule('inventory')">
                 <div class="icon-box" style="background:#eff6ff; color:var(--primary);">
                     <i class="ph ph-package"></i>
                 </div>
-                <h2 style="font-size:1.4rem;">Inventario General</h2>
+                <h2 style="font-size:1.4rem;">Inventario</h2>
                 <span class="badge" style="background:#dbeafe; color:#1e40af;">
                     ${itemsCount} items
                 </span>
@@ -151,20 +187,23 @@ window.app = {
     showModule: (moduleName, params = null) => {
         currentView = moduleName;
         currentViewParams = params;
-        
+
         if (moduleName === 'menu') renderMenu();
         if (moduleName === 'inventory') renderInventory(container, dbData);
         if (moduleName === 'areas') renderAreasModule(container, dbData);
         if (moduleName === 'events') renderEventsModule(container, dbData);
+        if (moduleName === 'suppliers') renderSuppliersModule(container, dbData);
+        if (moduleName === 'stats') renderStatsModule(container, dbData);
+        if (moduleName === 'calendar') renderCalendarModule(container, dbData);
     },
 
     reloadCurrentView: async () => {
-        dbData = await getDB(); // Refrescar datos incluyendo actividades
-        
-        if (['menu', 'inventory', 'areas', 'events'].includes(currentView)) {
+        dbData = await getDB();
+
+        if (['menu', 'inventory', 'areas', 'events', 'suppliers', 'stats', 'calendar'].includes(currentView)) {
             window.app.showModule(currentView, currentViewParams);
         } else {
-            renderMenu(); 
+            renderMenu();
         }
     },
     
@@ -245,9 +284,139 @@ window.app = {
 };
 
 // UTILIDAD DE CREACIÓN RÁPIDA (Personas)
-// La de áreas y eventos está en sus respectivos módulos, 
-// pero dejamos esta aquí por compatibilidad.
-window.addPersonPrompt = () => {
-    // ... (Esta función la reemplazamos con la nueva lógica quickCreate en inventory.js, 
-    // pero la dejamos vacía o legacy si se requiere, aunque inventory.js ya maneja todo).
+window.addPersonPrompt = () => {};
+
+// =========================================
+// 6. BÚSQUEDA GLOBAL
+// =========================================
+window.globalSearch = () => {
+    const html = `
+        <div class="global-search-container">
+            <div class="global-search-input-wrapper">
+                <i class="ph ph-magnifying-glass"></i>
+                <input type="text" id="global-search-input" placeholder="Buscar ítems, eventos, áreas, personas, proveedores..." autofocus>
+            </div>
+            <div id="global-search-results" class="global-search-results">
+                <div class="search-hint">
+                    <i class="ph ph-lightbulb"></i> Escribe para buscar en todo el sistema
+                </div>
+            </div>
+        </div>
+    `;
+
+    window.app.openModal('Búsqueda Global', html, () => {});
+
+    const input = document.getElementById('global-search-input');
+    const resultsContainer = document.getElementById('global-search-results');
+
+    let debounceTimer;
+    input.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            const term = e.target.value.trim().toLowerCase();
+            if (term.length < 2) {
+                resultsContainer.innerHTML = '<div class="search-hint"><i class="ph ph-lightbulb"></i> Escribe al menos 2 caracteres</div>';
+                return;
+            }
+            const results = searchAll(term, dbData);
+            renderSearchResults(results, resultsContainer);
+        }, 300);
+    });
 };
+
+function searchAll(term, data) {
+    const t = term.toLowerCase();
+    return {
+        items: (data.items || []).filter(i =>
+            i.name?.toLowerCase().includes(t) ||
+            i.brand?.toLowerCase().includes(t)
+        ).slice(0, 5),
+        events: (data.events || []).filter(e =>
+            e.name?.toLowerCase().includes(t)
+        ).slice(0, 5),
+        areas: (data.areas || []).filter(a =>
+            a.name?.toLowerCase().includes(t)
+        ).slice(0, 5),
+        people: (data.people || []).filter(p =>
+            p.name?.toLowerCase().includes(t)
+        ).slice(0, 5),
+        suppliers: (data.suppliers || []).filter(s =>
+            s.name?.toLowerCase().includes(t) ||
+            s.contact?.toLowerCase().includes(t)
+        ).slice(0, 5)
+    };
+}
+
+function renderSearchResults(results, container) {
+    const total = results.items.length + results.events.length + results.areas.length +
+                  results.people.length + results.suppliers.length;
+
+    if (total === 0) {
+        container.innerHTML = '<div class="search-no-results"><i class="ph ph-magnifying-glass-minus"></i> No se encontraron resultados</div>';
+        return;
+    }
+
+    let html = '';
+
+    if (results.items.length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-package"></i> Ítems</div>`;
+        html += results.items.map(i => `
+            <div class="search-result-item" onclick="app.closeModal(); app.showModule('inventory')">
+                <span class="search-result-name">${i.name}</span>
+                <span class="search-result-meta">${i.brand || ''}</span>
+            </div>
+        `).join('');
+    }
+
+    if (results.events.length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-calendar-check"></i> Eventos</div>`;
+        html += results.events.map(e => `
+            <div class="search-result-item" onclick="app.closeModal(); app.showModule('events')">
+                <span class="search-result-name">${e.name}</span>
+                <span class="search-result-meta">${e.startDate || ''}</span>
+            </div>
+        `).join('');
+    }
+
+    if (results.areas.length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-squares-four"></i> Áreas</div>`;
+        html += results.areas.map(a => `
+            <div class="search-result-item" onclick="app.closeModal(); app.showModule('areas')">
+                <span class="search-result-name">${a.name}</span>
+            </div>
+        `).join('');
+    }
+
+    if (results.people.length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-users"></i> Personas</div>`;
+        html += results.people.map(p => `
+            <div class="search-result-item" onclick="app.closeModal(); app.showModule('inventory')">
+                <span class="search-result-name">${p.name}</span>
+            </div>
+        `).join('');
+    }
+
+    if (results.suppliers.length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-factory"></i> Proveedores</div>`;
+        html += results.suppliers.map(s => `
+            <div class="search-result-item" onclick="app.closeModal(); app.showModule('suppliers')">
+                <span class="search-result-name">${s.name}</span>
+                <span class="search-result-meta">${s.category || ''}</span>
+            </div>
+        `).join('');
+    }
+
+    container.innerHTML = html;
+}
+
+// Atajo de teclado Ctrl+K
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        window.globalSearch();
+    }
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        window.globalSearch();
+    }
+});
