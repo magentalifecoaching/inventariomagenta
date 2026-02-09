@@ -757,6 +757,32 @@ input[type="color"] { padding: 0.2rem; height: 50px; cursor: pointer; }
 }
 
 /* =========================================
+   16. BARRA DE ACCIONES MASIVAS
+   ========================================= */
+.bulk-actions-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    border: 2px solid var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    animation: slideUp 0.2s ease-out;
+}
+
+.bulk-actions-bar span {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.95rem;
+    white-space: nowrap;
+}
+
+/* =========================================
    15. RESPONSIVE NUEVOS MÓDULOS
    ========================================= */
 @media (max-width: 768px) {
@@ -790,6 +816,17 @@ input[type="color"] { padding: 0.2rem; height: 50px; cursor: pointer; }
         width: 38px;
         height: 38px;
         font-size: 1rem;
+    }
+
+    .bulk-actions-bar {
+        flex-wrap: wrap;
+        padding: 0.6rem 1rem;
+        gap: 0.5rem;
+    }
+
+    .bulk-actions-bar .btn {
+        font-size: 0.8rem !important;
+        padding: 0.35rem 0.75rem !important;
     }
 }
 

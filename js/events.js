@@ -2,6 +2,11 @@ import { saveEvents, saveItems, saveActivities } from './api.js';
 import { renderInventory } from './inventory.js';
 
 // =========================================
+// ESTADO TEMPORAL PARA ACTIVIDADES EN MODAL
+// =========================================
+let tempActivities = [];
+
+// =========================================
 // 1. VISTA PRINCIPAL (GRID DE EVENTOS)
 // =========================================
 export function renderEventsModule(container, data) {
@@ -26,19 +31,25 @@ export function renderEventsModule(container, data) {
             </div>
         </div>
 
-        <div class="grid-dashboard">
+        <div class="filter-bar">
+            <div class="search-group">
+                <i class="ph ph-magnifying-glass"></i>
+                <input type="text" id="events-search" placeholder="Buscar eventos por nombre...">
+            </div>
+        </div>
+
+        <div class="grid-dashboard" id="events-grid">
             ${data.events.map(event => {
                 const isFinished = event.endDate && event.endDate < today;
                 const cardClass = isFinished ? 'dashboard-card finished' : 'dashboard-card';
                 const statusLabel = isFinished ? '(Finalizado)' : '';
                 const eventColor = event.color || '#a855f7';
-                
-                // Contar actividades e items
+
                 const actCount = (data.activities || []).filter(a => a.eventId === event.id).length;
                 const itemsCount = data.items.filter(i => i.eventId === event.id).length;
 
                 return `
-                <div class="${cardClass}" style="border-left: 6px solid ${eventColor}; position: relative;">
+                <div class="${cardClass}" style="border-left: 6px solid ${eventColor}; position: relative;" data-event-name="${event.name.toLowerCase()}">
                     <div style="position:absolute; top:15px; right:15px; display:flex; gap:8px; z-index:10;">
                         <button onclick="event.stopPropagation(); window.modalEvent('${event.id}')" class="btn-icon" title="Editar Evento">
                             <i class="ph ph-pencil-simple"></i>
@@ -58,11 +69,11 @@ export function renderEventsModule(container, data) {
                                 <span style="font-size:0.8rem; color:var(--text-muted); display:block;">Fin: ${event.endDate || '-'}</span>
                             </div>
                         </div>
-                        
+
                         <h2 style="text-align:left; font-size:1.4rem; margin-bottom:0.5rem;">
                             ${event.name} <span style="font-size:0.9rem; color:var(--text-muted); font-weight:400;">${statusLabel}</span>
                         </h2>
-                        
+
                         <div style="display:flex; gap:10px; margin-top:1rem;">
                              <span class="badge" style="background:#f1f5f9; color:#64748b;">
                                 <i class="ph ph-clock"></i> ${actCount} Actividades
@@ -78,6 +89,18 @@ export function renderEventsModule(container, data) {
         </div>
     </div>
     `;
+
+    // Search filter for events
+    const searchInput = document.getElementById('events-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            document.querySelectorAll('#events-grid .dashboard-card').forEach(card => {
+                const name = card.dataset.eventName || '';
+                card.style.display = name.includes(term) ? '' : 'none';
+            });
+        });
+    }
 }
 
 // =========================================
@@ -91,7 +114,6 @@ window.viewEventDetail = (eventId) => {
         const color = event.color || '#a855f7';
         const container = document.getElementById('main-layout');
 
-        // Renderizado base
         container.innerHTML = `
         <div class="container">
             <div class="header-bar">
@@ -104,13 +126,23 @@ window.viewEventDetail = (eventId) => {
                         <p><i class="ph ph-calendar"></i> ${event.startDate} al ${event.endDate}</p>
                     </div>
                 </div>
-                <div style="display:flex; gap:10px;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button onclick="window.importFromGeneralInventory('${eventId}')" class="btn btn-white">
+                        <i class="ph ph-download-simple"></i> Importar del Inventario
+                    </button>
                     <button onclick="window.downloadEventPDF('${eventId}')" class="btn btn-success">
-                        <i class="ph ph-file-pdf"></i> Descargar Cronograma PDF
+                        <i class="ph ph-file-pdf"></i> PDF
                     </button>
                     <button onclick="window.modalActivity('${eventId}')" class="btn btn-primary">
                         <i class="ph ph-plus"></i> Nueva Actividad
                     </button>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <div class="search-group">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="event-detail-search" placeholder="Buscar actividades o recursos dentro del evento...">
                 </div>
             </div>
 
@@ -123,17 +155,37 @@ window.viewEventDetail = (eventId) => {
                 </button>
             </div>
 
+            <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+                <span id="bulk-count">0 seleccionados</span>
+                <button onclick="window.bulkMoveToActivity('${eventId}')" class="btn btn-primary" style="padding:0.4rem 1rem; font-size:0.85rem;">
+                    <i class="ph ph-arrows-left-right"></i> Mover a Actividad
+                </button>
+                <button onclick="window.bulkRemoveItems('${eventId}')" class="btn btn-white" style="padding:0.4rem 1rem; font-size:0.85rem; color:var(--danger); border-color:var(--danger);">
+                    <i class="ph ph-trash"></i> Liberar Seleccionados
+                </button>
+            </div>
+
             <div id="event-content-area"></div>
         </div>
         `;
 
-        // Cargar por defecto el Cronograma
+        // Search within event
+        const searchInput = document.getElementById('event-detail-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('.timeline-item').forEach(item => {
+                    const text = item.textContent.toLowerCase();
+                    item.style.display = text.includes(term) ? '' : 'none';
+                });
+            });
+        }
+
         window.renderTimeline(eventId);
     });
 };
 
 window.switchTab = (tabName, eventId) => {
-    // Actualizar clases de botones
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.getElementById(`tab-${tabName}`).classList.add('active');
 
@@ -153,14 +205,23 @@ window.renderTimeline = (eventId) => {
 
         let html = '<div class="timeline">';
 
-        // 1. Bloque General (Sin horario)
+        // 1. Bloque General (con botón eliminar)
         if (generalItems.length > 0) {
             html += `
             <div class="timeline-item">
                 <div class="timeline-dot" style="background:#64748b; border-color:#e2e8f0;"></div>
-                <span class="timeline-time">LOGÍSTICA GENERAL</span>
-                <h3 class="timeline-title">Recursos Transversales / Generales</h3>
-                ${renderItemsList(generalItems, true)}
+                <div style="display:flex; justify-content:space-between; align-items:start;">
+                    <div>
+                        <span class="timeline-time">LOGÍSTICA GENERAL</span>
+                        <h3 class="timeline-title">Recursos Transversales / Generales</h3>
+                    </div>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="window.clearGeneralItems('${eventId}')" class="btn-icon" style="color:var(--danger);" title="Eliminar sección completa">
+                            <i class="ph ph-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                ${renderItemsWithCheckboxes(generalItems)}
             </div>`;
         } else if (activities.length === 0) {
             html += `<div style="padding:2rem; text-align:center; color:var(--text-muted);">
@@ -175,7 +236,7 @@ window.renderTimeline = (eventId) => {
             <div class="timeline-item">
                 <div class="timeline-dot"></div>
                 <span class="timeline-time">${act.startTime || '??:??'} - ${act.endTime || '??:??'}</span>
-                
+
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <div>
                         <h3 class="timeline-title">${act.name}</h3>
@@ -187,11 +248,14 @@ window.renderTimeline = (eventId) => {
                     </div>
                 </div>
 
-                ${renderItemsList(actItems)}
-                
-                <div style="margin-top:1rem;">
+                ${renderItemsWithCheckboxes(actItems)}
+
+                <div style="margin-top:1rem; display:flex; gap:8px; flex-wrap:wrap;">
                     <button onclick="window.assignItemsToActivity('${eventId}', '${act.id}')" class="btn btn-white" style="font-size:0.8rem; padding:0.4rem 0.8rem;">
                         <i class="ph ph-plus"></i> Añadir Recursos
+                    </button>
+                    <button onclick="window.importFromGeneralInventory('${eventId}', '${act.id}')" class="btn btn-white" style="font-size:0.8rem; padding:0.4rem 0.8rem;">
+                        <i class="ph ph-download-simple"></i> Importar del Inventario
                     </button>
                 </div>
             </div>`;
@@ -199,18 +263,22 @@ window.renderTimeline = (eventId) => {
 
         html += '</div>';
         area.innerHTML = html;
+
+        // Setup checkboxes
+        setupCheckboxListeners(eventId);
     });
 };
 
-// Helper para dibujar lista de items pequeña
-function renderItemsList(items, isGeneral = false) {
+// Helper: render items con checkboxes
+function renderItemsWithCheckboxes(items) {
     if (items.length === 0) return '<div style="font-size:0.85rem; color:var(--text-muted); font-style:italic;">Sin recursos asignados.</div>';
-    
+
     return `
     <div class="activity-items-list">
         ${items.map(i => `
             <div class="activity-item-row">
                 <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="checkbox" class="item-select-check" value="${i.id}" style="width:1.1rem; height:1.1rem; cursor:pointer; accent-color:var(--primary);">
                     <strong style="color:var(--text-main);">${i.name}</strong>
                     <span style="font-size:0.8rem; color:var(--text-muted);">(${i.brand || 'Genérico'})</span>
                 </div>
@@ -223,21 +291,36 @@ function renderItemsList(items, isGeneral = false) {
     </div>`;
 }
 
+// Checkbox listeners para acciones masivas
+function setupCheckboxListeners(eventId) {
+    const bulkBar = document.getElementById('bulk-actions-bar');
+    const bulkCount = document.getElementById('bulk-count');
+    if (!bulkBar) return;
+
+    document.querySelectorAll('.item-select-check').forEach(check => {
+        check.addEventListener('change', () => {
+            const checked = document.querySelectorAll('.item-select-check:checked');
+            if (checked.length > 0) {
+                bulkBar.classList.remove('hidden');
+                bulkCount.textContent = `${checked.length} seleccionado${checked.length > 1 ? 's' : ''}`;
+            } else {
+                bulkBar.classList.add('hidden');
+            }
+        });
+    });
+}
+
 // --- SUB-VISTA: INVENTARIO GLOBAL ---
 window.renderGlobalList = (eventId) => {
     import('./app.js').then(({ dbData }) => {
         const area = document.getElementById('event-content-area');
-        // Usamos la función existente de inventory.js pero filtrada
-        // Importamos dinámicamente para no causar conflictos circulares
         import('./inventory.js').then(({ renderInventory }) => {
-            // Creamos un div wrapper
             area.innerHTML = `<div id="global-inv-wrapper"></div>`;
             renderInventory(
-                document.getElementById('global-inv-wrapper'), 
-                dbData, 
-                (item) => item.eventId === eventId // Filtro solo este evento
+                document.getElementById('global-inv-wrapper'),
+                dbData,
+                (item) => item.eventId === eventId
             );
-            // Ocultamos la cabecera repetida que trae renderInventory
             setTimeout(() => {
                 const innerHeader = document.querySelector('#global-inv-wrapper .header-bar');
                 if(innerHeader) innerHeader.style.display = 'none';
@@ -247,14 +330,197 @@ window.renderGlobalList = (eventId) => {
 };
 
 // =========================================
-// 3. GESTIÓN (MODALES Y LÓGICA)
+// 3. ACCIONES MASIVAS (BULK)
 // =========================================
 
-// --- MODAL EVENTO (Crear/Editar) ---
+window.bulkMoveToActivity = (eventId) => {
+    import('./app.js').then(({ dbData }) => {
+        const checkedIds = Array.from(document.querySelectorAll('.item-select-check:checked')).map(c => c.value);
+        if (checkedIds.length === 0) return;
+
+        const activities = (dbData.activities || []).filter(a => a.eventId === eventId);
+
+        const html = `
+            <div style="margin-bottom:1rem; color:var(--text-muted);">Mover <strong>${checkedIds.length}</strong> ítem(s) a:</div>
+            <select id="bulk-target-activity" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px; margin-bottom:1.5rem; font-size:1rem;">
+                <option value="">-- General / Todo el Evento --</option>
+                ${activities.map(a => `<option value="${a.id}">${a.startTime || ''} - ${a.name}</option>`).join('')}
+            </select>
+            <button id="btn-bulk-move" class="btn btn-primary" style="width:100%;">
+                <i class="ph ph-arrows-left-right"></i> Mover
+            </button>
+        `;
+
+        window.app.openModal('Mover a Actividad', html, () => {});
+
+        document.getElementById('btn-bulk-move').onclick = async () => {
+            const targetActId = document.getElementById('bulk-target-activity').value || null;
+
+            dbData.items.forEach(item => {
+                if (checkedIds.includes(item.id)) {
+                    item.activityId = targetActId;
+                }
+            });
+
+            await saveItems(dbData.items);
+            window.app.closeModal();
+            window.app.showToast(`${checkedIds.length} ítems movidos`);
+            window.viewEventDetail(eventId);
+        };
+    });
+};
+
+window.bulkRemoveItems = (eventId) => {
+    const checkedIds = Array.from(document.querySelectorAll('.item-select-check:checked')).map(c => c.value);
+    if (checkedIds.length === 0) return;
+
+    window.app.confirm(
+        '¿Liberar ítems seleccionados?',
+        `Se liberarán ${checkedIds.length} ítem(s) del evento. Volverán al inventario general.`,
+        'Liberar',
+        'var(--danger)',
+        async () => {
+            import('./app.js').then(async ({ dbData }) => {
+                dbData.items.forEach(item => {
+                    if (checkedIds.includes(item.id)) {
+                        item.eventId = null;
+                        item.activityId = null;
+                        item.status = 'disponible';
+                    }
+                });
+
+                await saveItems(dbData.items);
+                window.app.showToast(`${checkedIds.length} ítems liberados`);
+                window.viewEventDetail(eventId);
+            });
+        }
+    );
+};
+
+// =========================================
+// 4. ELIMINAR LOGÍSTICA GENERAL
+// =========================================
+window.clearGeneralItems = (eventId) => {
+    window.app.confirm(
+        '¿Eliminar Logística General?',
+        'Los ítems volverán al inventario general como disponibles.',
+        'Eliminar',
+        'var(--danger)',
+        async () => {
+            import('./app.js').then(async ({ dbData }) => {
+                dbData.items.forEach(item => {
+                    if (item.eventId === eventId && !item.activityId) {
+                        item.eventId = null;
+                        item.activityId = null;
+                        item.status = 'disponible';
+                    }
+                });
+
+                await saveItems(dbData.items);
+                window.app.showToast('Sección de logística general eliminada');
+                window.viewEventDetail(eventId);
+            });
+        }
+    );
+};
+
+// =========================================
+// 5. IMPORTAR DESDE INVENTARIO GENERAL
+// =========================================
+window.importFromGeneralInventory = (eventId, activityId = null) => {
+    import('./app.js').then(({ dbData }) => {
+        const availableItems = dbData.items.filter(i => !i.eventId && i.status === 'disponible');
+
+        if (availableItems.length === 0) {
+            return window.app.showToast('No hay ítems disponibles en el inventario general');
+        }
+
+        const activities = (dbData.activities || []).filter(a => a.eventId === eventId);
+
+        const html = `
+            <div style="margin-bottom:1rem;">
+                <div class="search-group" style="margin-bottom:1rem;">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="import-inv-search" placeholder="Buscar ítems..." style="border:none; background:transparent; width:100%; outline:none;">
+                </div>
+                ${!activityId ? `
+                <div style="margin-bottom:1rem;">
+                    <label style="font-size:0.9rem; font-weight:600; color:#334155; margin-bottom:0.5rem; display:block;">Asignar a actividad:</label>
+                    <select id="import-target-activity" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px;">
+                        <option value="">-- General / Todo el Evento --</option>
+                        ${activities.map(a => `<option value="${a.id}">${a.startTime || ''} - ${a.name}</option>`).join('')}
+                    </select>
+                </div>
+                ` : ''}
+            </div>
+            <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;" id="import-items-list">
+                ${availableItems.map(item => `
+                    <label class="import-item-label" style="display:flex; align-items:center; padding:12px; border-bottom:1px solid var(--border); cursor:pointer; background:white; transition:background 0.15s;" data-name="${item.name.toLowerCase()}" data-brand="${(item.brand || '').toLowerCase()}">
+                        <input type="checkbox" class="import-item-check" value="${item.id}" style="width:1.2rem; height:1.2rem; margin-right:15px; accent-color:var(--primary);">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;">${item.name}</div>
+                            <div style="font-size:0.85rem; color:var(--text-muted);">Stock: ${item.stock} | Marca: ${item.brand || '-'}</div>
+                        </div>
+                    </label>
+                `).join('')}
+            </div>
+            <div style="margin-top:1.5rem;">
+                <button id="btn-import-confirm" class="btn btn-primary" style="width:100%;">
+                    <i class="ph ph-download-simple"></i> Importar Seleccionados
+                </button>
+            </div>
+        `;
+
+        window.app.openModal('Importar desde Inventario General', html, () => {});
+
+        // Búsqueda dentro del modal
+        const searchInput = document.getElementById('import-inv-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('.import-item-label').forEach(label => {
+                    const name = label.dataset.name || '';
+                    const brand = label.dataset.brand || '';
+                    label.style.display = (name.includes(term) || brand.includes(term)) ? '' : 'none';
+                });
+            });
+        }
+
+        document.getElementById('btn-import-confirm').onclick = async () => {
+            const checks = document.querySelectorAll('.import-item-check:checked');
+            const ids = Array.from(checks).map(c => c.value);
+            if (ids.length === 0) return window.app.showToast('Selecciona al menos un ítem');
+
+            const targetAct = activityId || (document.getElementById('import-target-activity')?.value || null);
+
+            dbData.items.forEach(item => {
+                if (ids.includes(item.id)) {
+                    item.eventId = eventId;
+                    item.activityId = targetAct;
+                    item.status = 'en uso';
+                }
+            });
+
+            await saveItems(dbData.items);
+            window.app.closeModal();
+            window.app.showToast(`${ids.length} ítems importados al evento`);
+            window.viewEventDetail(eventId);
+        };
+    });
+};
+
+// =========================================
+// 6. MODAL EVENTO (Crear/Editar) CON ACTIVIDADES
+// =========================================
 window.modalEvent = (id = null) => {
     import('./app.js').then(({ dbData }) => {
         const event = id ? dbData.events.find(e => e.id === id) : {};
-        
+
+        // Cargar actividades existentes si se edita
+        tempActivities = id
+            ? (dbData.activities || []).filter(a => a.eventId === id).map(a => ({...a}))
+            : [];
+
         const html = `
             <form id="dynamic-form" class="form-grid">
                 <input type="hidden" id="event-id" value="${event.id || ''}">
@@ -276,6 +542,23 @@ window.modalEvent = (id = null) => {
                     <label>Fecha Fin</label>
                     <input type="date" id="event-end" value="${event.endDate || ''}" required>
                 </div>
+
+                <!-- Sección de Actividades -->
+                <div class="full-width" style="border-top:2px solid var(--border); padding-top:1rem; margin-top:0.5rem;">
+                    <label style="font-size:1rem; font-weight:700; margin-bottom:1rem; display:flex; align-items:center; gap:8px;">
+                        <i class="ph ph-clock" style="color:var(--primary);"></i> Actividades del Cronograma
+                    </label>
+                    <div id="modal-activities-list"></div>
+                    <div style="display:flex; gap:8px; margin-top:1rem;">
+                        <button type="button" onclick="window.addTempActivity()" class="btn btn-white" style="flex:1;">
+                            <i class="ph ph-plus"></i> Nueva Actividad
+                        </button>
+                        <button type="button" onclick="window.importActivitiesFromOtherEvent()" class="btn btn-white" style="flex:1;">
+                            <i class="ph ph-copy"></i> Copiar de Otro Evento
+                        </button>
+                    </div>
+                </div>
+
                 <div class="full-width">
                     <button type="submit" class="btn btn-purple" style="width:100%;">Guardar Evento</button>
                 </div>
@@ -283,33 +566,267 @@ window.modalEvent = (id = null) => {
         `;
 
         window.app.openModal(id ? 'Editar Evento' : 'Nuevo Evento', html, async () => {
-            const newEvent = { 
-                id: document.getElementById('event-id').value || Date.now().toString(), 
-                name: document.getElementById('event-name').value, 
+            const eventId = document.getElementById('event-id').value || Date.now().toString();
+            const newEvent = {
+                id: eventId,
+                name: document.getElementById('event-name').value,
                 startDate: document.getElementById('event-start').value,
                 endDate: document.getElementById('event-end').value,
                 color: document.getElementById('event-color').value
             };
-            
+
             const idx = dbData.events.findIndex(e => e.id === newEvent.id);
             if (idx >= 0) dbData.events[idx] = newEvent;
             else dbData.events.push(newEvent);
-            
-            await saveEvents(dbData.events);
+
+            // Guardar actividades temporales
+            tempActivities.forEach(act => {
+                act.eventId = eventId;
+                if (!act.id) act.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+            });
+
+            if (!dbData.activities) dbData.activities = [];
+            // Reemplazar actividades del evento con las temporales
+            dbData.activities = dbData.activities.filter(a => a.eventId !== eventId);
+            dbData.activities = [...dbData.activities, ...tempActivities];
+
+            await Promise.all([
+                saveEvents(dbData.events),
+                saveActivities(dbData.activities)
+            ]);
+
             window.app.showToast("Evento guardado");
             window.app.closeModal();
             window.app.reloadCurrentView();
         });
+
+        // Renderizar actividades existentes
+        renderModalActivities();
     });
 };
 
-// --- MODAL ACTIVIDAD (Crear/Editar) ---
+function renderModalActivities() {
+    const list = document.getElementById('modal-activities-list');
+    if (!list) return;
+
+    if (tempActivities.length === 0) {
+        list.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text-muted); font-size:0.9rem; background:#f8fafc; border-radius:8px; border:1px dashed var(--border);">Sin actividades. Añade actividades para armar el cronograma.</div>';
+        return;
+    }
+
+    list.innerHTML = tempActivities.map((act, idx) => `
+        <div style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; background:white;">
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--primary); flex-shrink:0;"></div>
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:600; font-size:0.95rem;">${act.name}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">${act.startTime || '??:??'} - ${act.endTime || '??:??'}${act.description ? ' | ' + act.description : ''}</div>
+            </div>
+            <button type="button" onclick="window.editTempActivity(${idx})" class="btn-icon" title="Editar"><i class="ph ph-pencil-simple"></i></button>
+            <button type="button" onclick="window.removeTempActivity(${idx})" class="btn-icon" style="color:var(--danger);" title="Eliminar"><i class="ph ph-trash"></i></button>
+        </div>
+    `).join('');
+}
+
+window.addTempActivity = () => {
+    // Remover formulario previo si existe
+    document.getElementById('temp-act-form')?.remove();
+
+    const list = document.getElementById('modal-activities-list');
+    const formDiv = document.createElement('div');
+    formDiv.id = 'temp-act-form';
+    formDiv.style = 'padding:1rem; border:2px solid var(--primary); border-radius:8px; background:#eff6ff; margin-bottom:8px;';
+    formDiv.innerHTML = `
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Nombre</label>
+                <input type="text" id="temp-act-name" placeholder="Ej: Caminata" style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Descripción</label>
+                <input type="text" id="temp-act-desc" placeholder="Notas..." style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Hora Inicio</label>
+                <input type="time" id="temp-act-start" style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Hora Fin</label>
+                <input type="time" id="temp-act-end" style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button type="button" id="btn-temp-act-save" class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;">Agregar</button>
+            <button type="button" onclick="document.getElementById('temp-act-form')?.remove()" class="btn btn-white" style="flex:1; padding:0.5rem; font-size:0.9rem;">Cancelar</button>
+        </div>
+    `;
+
+    list.appendChild(formDiv);
+
+    // Focus en el nombre
+    document.getElementById('temp-act-name').focus();
+
+    // Evento save
+    document.getElementById('btn-temp-act-save').onclick = () => {
+        const name = document.getElementById('temp-act-name').value;
+        if (!name) return alert('El nombre es obligatorio');
+
+        tempActivities.push({
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            name,
+            description: document.getElementById('temp-act-desc').value,
+            startTime: document.getElementById('temp-act-start').value,
+            endTime: document.getElementById('temp-act-end').value,
+            eventId: document.getElementById('event-id')?.value || ''
+        });
+
+        document.getElementById('temp-act-form')?.remove();
+        renderModalActivities();
+    };
+};
+
+window.editTempActivity = (idx) => {
+    const act = tempActivities[idx];
+    document.getElementById('temp-act-form')?.remove();
+
+    window.addTempActivity();
+
+    // Rellenar datos
+    document.getElementById('temp-act-name').value = act.name || '';
+    document.getElementById('temp-act-desc').value = act.description || '';
+    document.getElementById('temp-act-start').value = act.startTime || '';
+    document.getElementById('temp-act-end').value = act.endTime || '';
+
+    // Cambiar botón a "Actualizar"
+    const saveBtn = document.getElementById('btn-temp-act-save');
+    saveBtn.textContent = 'Actualizar';
+    saveBtn.onclick = () => {
+        const name = document.getElementById('temp-act-name').value;
+        if (!name) return alert('El nombre es obligatorio');
+
+        tempActivities[idx] = {
+            ...tempActivities[idx],
+            name,
+            description: document.getElementById('temp-act-desc').value,
+            startTime: document.getElementById('temp-act-start').value,
+            endTime: document.getElementById('temp-act-end').value
+        };
+
+        document.getElementById('temp-act-form')?.remove();
+        renderModalActivities();
+    };
+};
+
+window.removeTempActivity = (idx) => {
+    tempActivities.splice(idx, 1);
+    renderModalActivities();
+};
+
+window.importActivitiesFromOtherEvent = () => {
+    import('./app.js').then(({ dbData }) => {
+        const currentEventId = document.getElementById('event-id')?.value || '';
+        const otherEvents = dbData.events.filter(e => e.id !== currentEventId);
+
+        if (otherEvents.length === 0) return window.app.showToast('No hay otros eventos');
+
+        // Usamos el mismo patrón que quickCreate: overlay con z-index alto
+        let overlay = document.getElementById('import-acts-overlay');
+        if (overlay) overlay.remove();
+
+        overlay = document.createElement('div');
+        overlay.id = 'import-acts-overlay';
+        overlay.className = 'modal-overlay';
+        overlay.style.zIndex = '3000';
+
+        let innerHtml = `
+            <div class="modal-content" style="max-width:600px; animation:slideUp 0.2s ease-out;">
+                <div class="modal-header">
+                    <h3>Importar Actividades de Otro Evento</h3>
+                    <button onclick="document.getElementById('import-acts-overlay')?.remove()" class="btn-icon">
+                        <i class="ph ph-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body" style="max-height:60vh; overflow-y:auto;">
+        `;
+
+        let hasActivities = false;
+        otherEvents.forEach(evt => {
+            const acts = (dbData.activities || []).filter(a => a.eventId === evt.id);
+            if (acts.length === 0) return;
+            hasActivities = true;
+
+            innerHtml += `
+                <div style="margin-bottom:1.5rem;">
+                    <div style="font-weight:700; margin-bottom:0.5rem; color:${evt.color || '#a855f7'}; display:flex; align-items:center; gap:8px;">
+                        <i class="ph ph-calendar"></i> ${evt.name}
+                    </div>`;
+
+            acts.forEach(a => {
+                innerHtml += `
+                    <label style="display:flex; align-items:center; padding:10px; border:1px solid var(--border); border-radius:6px; margin-bottom:4px; cursor:pointer; background:white; transition:background 0.15s;">
+                        <input type="checkbox" class="import-act-check"
+                            data-name="${a.name}"
+                            data-start="${a.startTime || ''}"
+                            data-end="${a.endTime || ''}"
+                            data-desc="${a.description || ''}"
+                            style="width:1.1rem; height:1.1rem; margin-right:12px; accent-color:var(--primary);">
+                        <div>
+                            <div style="font-weight:600; font-size:0.9rem;">${a.name}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted);">${a.startTime || '??:??'} - ${a.endTime || '??:??'}${a.description ? ' | ' + a.description : ''}</div>
+                        </div>
+                    </label>`;
+            });
+            innerHtml += '</div>';
+        });
+
+        if (!hasActivities) {
+            innerHtml += '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hay actividades en otros eventos para importar.</div>';
+        }
+
+        innerHtml += `
+                    <button id="btn-import-acts-confirm" class="btn btn-primary" style="width:100%; margin-top:1rem;">
+                        <i class="ph ph-copy"></i> Importar Seleccionadas
+                    </button>
+                </div>
+            </div>
+        `;
+
+        overlay.innerHTML = innerHtml;
+        document.body.appendChild(overlay);
+
+        document.getElementById('btn-import-acts-confirm').onclick = () => {
+            const checks = document.querySelectorAll('.import-act-check:checked');
+            if (checks.length === 0) {
+                window.app.showToast('Selecciona al menos una actividad');
+                return;
+            }
+
+            checks.forEach(c => {
+                tempActivities.push({
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    name: c.dataset.name,
+                    startTime: c.dataset.start,
+                    endTime: c.dataset.end,
+                    description: c.dataset.desc,
+                    eventId: ''
+                });
+            });
+
+            overlay.remove();
+            renderModalActivities();
+            window.app.showToast(`${checks.length} actividades importadas`);
+        };
+    });
+};
+
+// =========================================
+// 7. MODAL ACTIVIDAD (Crear/Editar) DESDE DETALLE
+// =========================================
 window.modalActivity = (eventId, activityId = null) => {
     import('./app.js').then(({ dbData }) => {
-        const act = activityId 
-            ? (dbData.activities || []).find(a => a.id === activityId) 
+        const act = activityId
+            ? (dbData.activities || []).find(a => a.id === activityId)
             : {};
-        
+
         const html = `
             <form id="dynamic-form" class="form-grid">
                 <div class="full-width">
@@ -352,22 +869,21 @@ window.modalActivity = (eventId, activityId = null) => {
             await saveActivities(dbData.activities);
             window.app.showToast("Actividad guardada");
             window.app.closeModal();
-            window.viewEventDetail(eventId); // Recargar vista detalle
+            window.viewEventDetail(eventId);
         });
     });
 };
 
-// --- ELIMINAR ---
+// =========================================
+// 8. ELIMINAR EVENTO / ACTIVIDAD
+// =========================================
 window.deleteEvent = (id) => {
     window.app.confirm('¿Eliminar Evento?', 'Se borrará el evento y sus actividades. Los items quedarán libres.', 'Eliminar', 'var(--danger)', async () => {
         import('./app.js').then(async ({ dbData }) => {
-            // 1. Borrar evento
             dbData.events = dbData.events.filter(e => e.id !== id);
-            // 2. Borrar actividades asociadas
             if (dbData.activities) {
                 dbData.activities = dbData.activities.filter(a => a.eventId !== id);
             }
-            // 3. Liberar items
             let itemsModified = false;
             dbData.items.forEach(i => {
                 if(i.eventId === id) {
@@ -393,13 +909,11 @@ window.deleteEvent = (id) => {
 window.deleteActivity = (actId, eventId) => {
     window.app.confirm('¿Borrar Actividad?', 'Los items volverán a la lista General del evento.', 'Borrar', 'var(--danger)', async () => {
         import('./app.js').then(async ({ dbData }) => {
-            // 1. Borrar actividad
             dbData.activities = dbData.activities.filter(a => a.id !== actId);
-            // 2. Mover items a General (null activityId)
             let itemsModified = false;
             dbData.items.forEach(i => {
                 if(i.activityId === actId) {
-                    i.activityId = null; // Se quedan en el evento, pero sin actividad
+                    i.activityId = null;
                     itemsModified = true;
                 }
             });
@@ -415,26 +929,32 @@ window.deleteActivity = (actId, eventId) => {
     });
 };
 
-// --- ASIGNAR RECURSOS RÁPIDO ---
+// =========================================
+// 9. ASIGNAR RECURSOS RÁPIDO (ya existente)
+// =========================================
 window.assignItemsToActivity = (eventId, activityId) => {
     import('./app.js').then(({ dbData }) => {
-        // Buscamos items que estén DISPONIBLES (sin evento) 
-        // O que sean del MISMO evento pero sin actividad (General)
-        const availableItems = dbData.items.filter(i => 
-            (!i.eventId && i.status === 'disponible') || 
+        const availableItems = dbData.items.filter(i =>
+            (!i.eventId && i.status === 'disponible') ||
             (i.eventId === eventId && !i.activityId)
         );
 
         if(availableItems.length === 0) return window.app.showToast("No hay items disponibles para asignar");
 
         const html = `
-            <div style="margin-bottom:1rem; color:var(--text-muted);">Selecciona items para esta actividad:</div>
+            <div style="margin-bottom:1rem;">
+                <div class="search-group" style="margin-bottom:1rem;">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="assign-search" placeholder="Buscar ítems..." style="border:none; background:transparent; width:100%; outline:none;">
+                </div>
+                <span style="color:var(--text-muted);">Selecciona items para esta actividad:</span>
+            </div>
             <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
                 ${availableItems.map(item => {
                     const label = item.eventId === eventId ? '<span style="color:var(--primary); font-size:0.75rem;">(En Evento General)</span>' : '';
                     return `
-                    <label style="display:flex; align-items:center; padding:12px; border-bottom:1px solid var(--border); cursor:pointer; background:white;">
-                        <input type="checkbox" class="item-check" value="${item.id}" style="width:1.2rem; height:1.2rem; margin-right:15px;">
+                    <label class="assign-item-label" style="display:flex; align-items:center; padding:12px; border-bottom:1px solid var(--border); cursor:pointer; background:white;" data-name="${item.name.toLowerCase()}" data-brand="${(item.brand || '').toLowerCase()}">
+                        <input type="checkbox" class="item-check" value="${item.id}" style="width:1.2rem; height:1.2rem; margin-right:15px; accent-color:var(--primary);">
                         <div style="flex:1;">
                             <div style="font-weight:600;">${item.name} ${label}</div>
                             <div style="font-size:0.85rem; color:var(--text-muted);">Stock: ${item.stock} | Marca: ${item.brand || '-'}</div>
@@ -447,11 +967,21 @@ window.assignItemsToActivity = (eventId, activityId) => {
             </div>
         `;
 
-        window.app.openModal('Asignar Recursos', html, async () => {
-            // Este callback se ignora porque usaremos el botón custom
-        });
+        window.app.openModal('Asignar Recursos', html, async () => {});
 
-        // Lógica manual del botón
+        // Búsqueda
+        const searchInput = document.getElementById('assign-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('.assign-item-label').forEach(label => {
+                    const name = label.dataset.name || '';
+                    const brand = label.dataset.brand || '';
+                    label.style.display = (name.includes(term) || brand.includes(term)) ? '' : 'none';
+                });
+            });
+        }
+
         document.getElementById('btn-assign-confirm').onclick = async () => {
             const checks = document.querySelectorAll('.item-check:checked');
             const ids = Array.from(checks).map(c => c.value);
@@ -475,7 +1005,7 @@ window.assignItemsToActivity = (eventId, activityId) => {
 };
 
 // =========================================
-// 4. GENERADOR DE PDF (CRONOGRAMA)
+// 10. GENERADOR DE PDF (CRONOGRAMA)
 // =========================================
 window.downloadEventPDF = (eventId) => {
     import('./app.js').then(({ dbData }) => {
@@ -485,15 +1015,13 @@ window.downloadEventPDF = (eventId) => {
             .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
         const generalItems = dbData.items.filter(i => i.eventId === eventId && !i.activityId);
 
-        // Inicializar jsPDF
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
 
-        // Cabecera
         doc.setFontSize(22);
         doc.setTextColor(40, 40, 40);
         doc.text(event.name, 14, 20);
-        
+
         doc.setFontSize(12);
         doc.setTextColor(100);
         doc.text(`Fecha: ${event.startDate} al ${event.endDate}`, 14, 30);
@@ -501,12 +1029,11 @@ window.downloadEventPDF = (eventId) => {
 
         let finalY = 40;
 
-        // 1. Tabla de Recursos Generales (si hay)
         if (generalItems.length > 0) {
             doc.setFontSize(14);
             doc.setTextColor(0);
             doc.text("Recursos Generales / Transversales", 14, finalY + 10);
-            
+
             const generalRows = generalItems.map(i => [i.name, i.brand || '-', i.stock.toString()]);
             doc.autoTable({
                 startY: finalY + 15,
@@ -518,18 +1045,15 @@ window.downloadEventPDF = (eventId) => {
             finalY = doc.lastAutoTable.finalY + 10;
         }
 
-        // 2. Iterar Actividades
         activities.forEach(act => {
             const actItems = dbData.items.filter(i => i.activityId === act.id);
-            
-            // Título Actividad (Hora - Nombre)
-            // Chequear si cabe en la página
+
             if (finalY > 250) { doc.addPage(); finalY = 20; }
 
             doc.setFontSize(12);
-            doc.setTextColor(59, 130, 246); // Azul
+            doc.setTextColor(59, 130, 246);
             doc.text(`${act.startTime || '??:??'} - ${act.endTime || '??:??'} | ${act.name}`, 14, finalY + 10);
-            
+
             if (act.description) {
                 doc.setFontSize(10);
                 doc.setTextColor(100);
@@ -544,7 +1068,7 @@ window.downloadEventPDF = (eventId) => {
                     head: [['Ítem', 'Marca', 'Cant.']],
                     body: rows,
                     theme: 'grid',
-                    headStyles: { fillColor: [59, 130, 246] }, // Azul primario
+                    headStyles: { fillColor: [59, 130, 246] },
                     margin: { left: 14 }
                 });
                 finalY = doc.lastAutoTable.finalY;
@@ -554,7 +1078,7 @@ window.downloadEventPDF = (eventId) => {
                 doc.text("(Sin recursos asignados)", 14, finalY + 12);
                 finalY += 15;
             }
-            finalY += 5; // Espacio entre actividades
+            finalY += 5;
         });
 
         doc.save(`Cronograma_${event.name.replace(/\s+/g, '_')}.pdf`);

@@ -280,7 +280,9 @@ window.app = {
 
     refreshData: async () => {
         dbData = await getDB();
-    }
+    },
+
+    _getDbData: () => dbData
 };
 
 // UTILIDAD DE CREACIÓN RÁPIDA (Personas)
@@ -337,6 +339,10 @@ function searchAll(term, data) {
         areas: (data.areas || []).filter(a =>
             a.name?.toLowerCase().includes(t)
         ).slice(0, 5),
+        activities: (data.activities || []).filter(a =>
+            a.name?.toLowerCase().includes(t) ||
+            a.description?.toLowerCase().includes(t)
+        ).slice(0, 5),
         people: (data.people || []).filter(p =>
             p.name?.toLowerCase().includes(t)
         ).slice(0, 5),
@@ -349,7 +355,7 @@ function searchAll(term, data) {
 
 function renderSearchResults(results, container) {
     const total = results.items.length + results.events.length + results.areas.length +
-                  results.people.length + results.suppliers.length;
+                  (results.activities || []).length + results.people.length + results.suppliers.length;
 
     if (total === 0) {
         container.innerHTML = '<div class="search-no-results"><i class="ph ph-magnifying-glass-minus"></i> No se encontraron resultados</div>';
@@ -385,6 +391,18 @@ function renderSearchResults(results, container) {
                 <span class="search-result-name">${a.name}</span>
             </div>
         `).join('');
+    }
+
+    if ((results.activities || []).length > 0) {
+        html += `<div class="search-group-title"><i class="ph ph-clock"></i> Actividades</div>`;
+        html += results.activities.map(a => {
+            const evtName = (dbData?.events || []).find(e => e.id === a.eventId)?.name || '';
+            return `
+            <div class="search-result-item" onclick="app.closeModal(); window.viewEventDetail && window.viewEventDetail('${a.eventId}')">
+                <span class="search-result-name">${a.name}</span>
+                <span class="search-result-meta">${a.startTime || ''} ${evtName ? '| ' + evtName : ''}</span>
+            </div>`;
+        }).join('');
     }
 
     if (results.people.length > 0) {
