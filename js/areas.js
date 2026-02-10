@@ -1,5 +1,6 @@
-import { saveAreas, saveItems } from './api.js';
+import { saveAreas, saveItems, saveOneArea, deleteOneArea } from './api.js';
 import { renderInventory } from './inventory.js';
+import { generateId, debounce, upsert } from './utils.js';
 
 export function renderAreasModule(container, data) {
     const colors = ['#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ef4444'];
@@ -42,6 +43,12 @@ export function renderAreasModule(container, data) {
                 <div class="dashboard-card" style="border-top: 4px solid ${color}; position: relative;" data-area-name="${area.name.toLowerCase()}">
 
                     <div style="position:absolute; top:15px; right:15px; display:flex; gap:8px;">
+                        <button onclick="event.stopPropagation(); window.downloadAreaPDF('${area.id}')" class="btn-icon" title="Descargar PDF" style="color:var(--danger)">
+                            <i class="ph ph-file-pdf"></i>
+                        </button>
+                        <button onclick="event.stopPropagation(); window.downloadAreaExcel('${area.id}')" class="btn-icon" title="Descargar Excel" style="color:var(--success)">
+                            <i class="ph ph-microsoft-excel-logo"></i>
+                        </button>
                         <button onclick="event.stopPropagation(); window.modalArea('${area.id}')" class="btn-icon" title="Editar">
                             <i class="ph ph-pencil-simple"></i>
                         </button>
@@ -71,13 +78,13 @@ export function renderAreasModule(container, data) {
     // Search filter for areas
     const searchInput = document.getElementById('areas-search');
     if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
+        searchInput.addEventListener('input', debounce((e) => {
             const term = e.target.value.toLowerCase();
             document.querySelectorAll('#areas-grid .dashboard-card').forEach(card => {
                 const name = card.dataset.areaName || '';
                 card.style.display = name.includes(term) ? '' : 'none';
             });
-        });
+        }, 150));
     }
 }
 
@@ -130,15 +137,12 @@ window.modalArea = (id = null) => {
 
         window.app.openModal(id ? 'Editar Área' : 'Nueva Área', html, async () => {
             const newArea = {
-                id: document.getElementById('area-id').value || Date.now().toString(),
+                id: document.getElementById('area-id').value || generateId(),
                 name: document.getElementById('area-name').value
             };
 
-            const index = dbData.areas.findIndex(a => a.id === newArea.id);
-            if (index >= 0) dbData.areas[index] = newArea;
-            else dbData.areas.push(newArea);
-
-            await saveAreas(dbData.areas);
+            upsert(dbData.areas, newArea);
+            await saveOneArea(newArea);
 
             window.app.reloadCurrentView();
         });
@@ -155,7 +159,7 @@ window.deleteArea = (id) => {
         async () => {
             import('./app.js').then(async ({ dbData }) => {
                 dbData.areas = dbData.areas.filter(a => a.id !== id);
-                await saveAreas(dbData.areas);
+                await deleteOneArea(id);
 
                 let modified = false;
                 dbData.items.forEach(item => {
@@ -194,6 +198,12 @@ window.viewAreaDetail = (id) => {
                     </div>
                 </div>
                 <div style="display:flex; gap:10px;">
+                    <button onclick="window.downloadAreaPDF('${id}')" class="btn btn-white" style="color:var(--danger);">
+                        <i class="ph ph-file-pdf"></i> PDF
+                    </button>
+                    <button onclick="window.downloadAreaExcel('${id}')" class="btn btn-success">
+                        <i class="ph ph-microsoft-excel-logo"></i> Excel
+                    </button>
                     <button onclick="window.importItemsToArea('${id}')" class="btn btn-white">
                         <i class="ph ph-download-simple"></i> Importar del Inventario
                     </button>
@@ -217,7 +227,76 @@ window.viewAreaDetail = (id) => {
     });
 };
 
-// 5. Importar ítems del inventario general a un área
+// 5. Descargar PDF del inventario de un área
+window.downloadAreaPDF = (areaId) => {
+    import('./app.js').then(({ dbData }) => {
+        const area = dbData.areas.find(a => a.id === areaId);
+        if (!area) return;
+
+        const areaItems = dbData.items.filter(i => i.areaId === areaId);
+        if (areaItems.length === 0) {
+            return window.app.showToast('No hay ítems en esta área para exportar');
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.setFontSize(22);
+        doc.setTextColor(40, 40, 40);
+        doc.text(area.name, 14, 20);
+
+        doc.setFontSize(12);
+        doc.setTextColor(100);
+        doc.text(`Inventario del área - ${areaItems.length} ítems`, 14, 30);
+        doc.line(14, 35, 196, 35);
+
+        const rows = areaItems.map(i => [
+            i.name,
+            i.brand || '-',
+            i.stock.toString(),
+            i.status || '-',
+            i.tracking ? i.tracking.replace('_', ' ') : '-',
+            dbData.people.find(p => p.id === i.personId)?.name || '-'
+        ]);
+
+        doc.autoTable({
+            startY: 40,
+            head: [['Ítem', 'Marca', 'Stock', 'Estado', 'Seguimiento', 'Encargado']],
+            body: rows,
+            theme: 'striped',
+            headStyles: { fillColor: [59, 130, 246] },
+            styles: { fontSize: 10 }
+        });
+
+        doc.save(`Area_${area.name.replace(/\s+/g, '_')}.pdf`);
+    });
+};
+
+// 6. Descargar Excel del inventario de un área
+window.downloadAreaExcel = (areaId) => {
+    import('./app.js').then(({ dbData }) => {
+        const area = dbData.areas.find(a => a.id === areaId);
+        if (!area) return;
+
+        const areaItems = dbData.items.filter(i => i.areaId === areaId);
+        if (areaItems.length === 0) {
+            return window.app.showToast('No hay ítems en esta área para exportar');
+        }
+
+        const exportData = areaItems.map(i => ({
+            Nombre: i.name,
+            Marca: i.brand || '',
+            Stock: i.stock,
+            Estado: i.status || '',
+            Seguimiento: i.tracking ? i.tracking.replace('_', ' ') : '',
+            Encargado: dbData.people.find(p => p.id === i.personId)?.name || ''
+        }));
+
+        window.app.exportToExcel(exportData, `Area_${area.name.replace(/\s+/g, '_')}`);
+    });
+};
+
+// 7. Importar ítems del inventario general a un área
 window.importItemsToArea = (areaId) => {
     import('./app.js').then(({ dbData }) => {
         const area = dbData.areas.find(a => a.id === areaId);

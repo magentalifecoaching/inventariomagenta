@@ -5,6 +5,7 @@ import { db, auth, provider, signInWithPopup, signOut } from './firebase-config.
 import { onAuthStateChanged } from "firebase/auth";
 
 import { getDB, savePeople, saveActivities } from './api.js';
+import { debounce } from './utils.js';
 
 import { renderInventory } from './inventory.js';
 import { renderAreasModule } from './areas.js';
@@ -311,19 +312,15 @@ window.globalSearch = () => {
     const input = document.getElementById('global-search-input');
     const resultsContainer = document.getElementById('global-search-results');
 
-    let debounceTimer;
-    input.addEventListener('input', (e) => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            const term = e.target.value.trim().toLowerCase();
-            if (term.length < 2) {
-                resultsContainer.innerHTML = '<div class="search-hint"><i class="ph ph-lightbulb"></i> Escribe al menos 2 caracteres</div>';
-                return;
-            }
-            const results = searchAll(term, dbData);
-            renderSearchResults(results, resultsContainer);
-        }, 300);
-    });
+    input.addEventListener('input', debounce((e) => {
+        const term = e.target.value.trim().toLowerCase();
+        if (term.length < 2) {
+            resultsContainer.innerHTML = '<div class="search-hint"><i class="ph ph-lightbulb"></i> Escribe al menos 2 caracteres</div>';
+            return;
+        }
+        const results = searchAll(term, dbData);
+        renderSearchResults(results, resultsContainer);
+    }, 300));
 };
 
 function searchAll(term, data) {
@@ -427,8 +424,9 @@ function renderSearchResults(results, container) {
     container.innerHTML = html;
 }
 
-// Atajo de teclado Ctrl+K
+// Atajos de teclado
 document.addEventListener('keydown', (e) => {
+    // Ctrl+K o / para búsqueda global
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         window.globalSearch();
@@ -436,5 +434,27 @@ document.addEventListener('keydown', (e) => {
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
         e.preventDefault();
         window.globalSearch();
+    }
+    // Escape para cerrar modales
+    if (e.key === 'Escape') {
+        const confirmModal = document.getElementById('modal-confirm-container');
+        const modal = document.getElementById('modal-container');
+        if (confirmModal && !confirmModal.classList.contains('hidden')) {
+            confirmModal.classList.add('hidden');
+        } else if (modal && !modal.classList.contains('hidden')) {
+            modal.classList.add('hidden');
+        }
+    }
+});
+
+// Click fuera del modal para cerrar
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('modal-container');
+    if (modal && !modal.classList.contains('hidden') && e.target === modal) {
+        modal.classList.add('hidden');
+    }
+    const confirmModal = document.getElementById('modal-confirm-container');
+    if (confirmModal && !confirmModal.classList.contains('hidden') && e.target === confirmModal) {
+        confirmModal.classList.add('hidden');
     }
 });

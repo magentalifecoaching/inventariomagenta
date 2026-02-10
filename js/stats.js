@@ -1,36 +1,49 @@
+import { todayISO } from './utils.js';
+
+// Cache de instancias de Chart para destruirlas antes de re-crear
+let chartInstances = [];
+
+function destroyCharts() {
+    chartInstances.forEach(c => c.destroy());
+    chartInstances = [];
+}
+
 export function renderStatsModule(container, data) {
+    destroyCharts();
+
     const items = data.items || [];
     const events = data.events || [];
     const areas = data.areas || [];
     const people = data.people || [];
     const suppliers = data.suppliers || [];
 
-    // Calcular métricas
-    const totalItems = items.length;
-    const byStatus = {
-        disponible: items.filter(i => i.status === 'disponible').length,
-        'en uso': items.filter(i => i.status === 'en uso').length,
-        mantenimiento: items.filter(i => i.status === 'mantenimiento').length
-    };
-    const byTracking = {
-        conseguido: items.filter(i => i.tracking === 'conseguido').length,
-        en_proceso: items.filter(i => i.tracking === 'en_proceso').length,
-        por_conseguir: items.filter(i => i.tracking === 'por_conseguir').length
-    };
+    // Single-pass: calcular todas las métricas en una sola iteración
+    const byStatus = { disponible: 0, 'en uso': 0, mantenimiento: 0 };
+    const byTracking = { conseguido: 0, en_proceso: 0, por_conseguir: 0 };
+    const areaCounts = {};
+    const personCounts = {};
+    let totalStock = 0;
 
-    // Items por área
+    items.forEach(i => {
+        // Status
+        if (byStatus.hasOwnProperty(i.status)) byStatus[i.status]++;
+        // Tracking
+        if (byTracking.hasOwnProperty(i.tracking)) byTracking[i.tracking]++;
+        // Area
+        if (i.areaId) areaCounts[i.areaId] = (areaCounts[i.areaId] || 0) + 1;
+        // Person
+        if (i.personId) personCounts[i.personId] = (personCounts[i.personId] || 0) + 1;
+        // Stock total
+        totalStock += (i.stock || 0);
+    });
+
+    // Items por área (con nombre)
     const itemsByArea = {};
     areas.forEach(a => {
-        itemsByArea[a.name] = items.filter(i => i.areaId === a.id).length;
+        itemsByArea[a.name] = areaCounts[a.id] || 0;
     });
 
     // Top encargados
-    const personCounts = {};
-    items.forEach(i => {
-        if (i.personId) {
-            personCounts[i.personId] = (personCounts[i.personId] || 0) + 1;
-        }
-    });
     const topPeople = Object.entries(personCounts)
         .map(([id, count]) => ({
             name: people.find(p => p.id === id)?.name || 'Desconocido',
@@ -39,9 +52,11 @@ export function renderStatsModule(container, data) {
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
 
-    // Eventos activos (fecha actual entre startDate y endDate)
-    const today = new Date().toISOString().split('T')[0];
+    // Eventos activos
+    const today = todayISO();
     const activeEvents = events.filter(e => e.startDate <= today && e.endDate >= today).length;
+
+    const totalItems = items.length;
 
     const html = `
     <div class="container">
@@ -65,7 +80,7 @@ export function renderStatsModule(container, data) {
                 </div>
                 <div class="stats-info">
                     <span class="stats-value">${totalItems}</span>
-                    <span class="stats-label">Total Ítems</span>
+                    <span class="stats-label">Total Ítems (${totalStock} unidades)</span>
                 </div>
             </div>
 
@@ -165,7 +180,7 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
     // Chart 1: Estado de ítems (Donut)
     const ctxStatus = document.getElementById('chart-status');
     if (ctxStatus) {
-        new Chart(ctxStatus, {
+        chartInstances.push(new Chart(ctxStatus, {
             type: 'doughnut',
             data: {
                 labels: ['Disponible', 'En Uso', 'Mantenimiento'],
@@ -182,7 +197,7 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
                     legend: { position: 'bottom' }
                 }
             }
-        });
+        }));
     }
 
     // Chart 2: Ítems por Área (Barras)
@@ -191,7 +206,7 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
         const areaLabels = Object.keys(itemsByArea);
         const areaValues = Object.values(itemsByArea);
 
-        new Chart(ctxAreas, {
+        chartInstances.push(new Chart(ctxAreas, {
             type: 'bar',
             data: {
                 labels: areaLabels,
@@ -212,13 +227,13 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
                     y: { beginAtZero: true }
                 }
             }
-        });
+        }));
     }
 
     // Chart 3: Top Encargados (Barras Horizontales)
     const ctxPeople = document.getElementById('chart-people');
     if (ctxPeople) {
-        new Chart(ctxPeople, {
+        chartInstances.push(new Chart(ctxPeople, {
             type: 'bar',
             data: {
                 labels: topPeople.map(p => p.name),
@@ -240,13 +255,13 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
                     x: { beginAtZero: true }
                 }
             }
-        });
+        }));
     }
 
     // Chart 4: Seguimiento (Donut)
     const ctxTracking = document.getElementById('chart-tracking');
     if (ctxTracking) {
-        new Chart(ctxTracking, {
+        chartInstances.push(new Chart(ctxTracking, {
             type: 'doughnut',
             data: {
                 labels: ['Conseguido', 'En Proceso', 'Por Conseguir'],
@@ -263,6 +278,6 @@ function renderCharts(byStatus, byTracking, itemsByArea, topPeople) {
                     legend: { position: 'bottom' }
                 }
             }
-        });
+        }));
     }
 }

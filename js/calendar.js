@@ -1,4 +1,5 @@
-import { saveEvents } from './api.js';
+import { saveOneEvent } from './api.js';
+import { generateId, formatDate, todayISO } from './utils.js';
 
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -73,7 +74,7 @@ function generateCalendarGrid(year, month, events) {
     if (startDay < 0) startDay = 6;
 
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = todayISO();
 
     let html = '';
 
@@ -182,7 +183,7 @@ window.calendarDayClick = (dateStr) => {
 
         window.app.openModal('Nuevo Evento', html, async () => {
             const newEvent = {
-                id: Date.now().toString(),
+                id: generateId(),
                 name: document.getElementById('event-name').value,
                 startDate: document.getElementById('event-start').value,
                 endDate: document.getElementById('event-end').value,
@@ -190,7 +191,7 @@ window.calendarDayClick = (dateStr) => {
             };
 
             dbData.events.push(newEvent);
-            await saveEvents(dbData.events);
+            await saveOneEvent(newEvent);
 
             window.app.showToast("Evento creado exitosamente");
             window.app.closeModal();
@@ -229,12 +230,6 @@ window.calendarEventClick = (eventId) => {
 };
 
 window.calendarQuickEvent = () => {
-    const today = new Date().toISOString().split('T')[0];
-    window.calendarDayClick(today);
+    window.calendarDayClick(todayISO());
 };
 
-function formatDate(dateStr) {
-    if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
-}

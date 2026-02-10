@@ -1,5 +1,6 @@
 import { saveEvents, saveItems, saveActivities } from './api.js';
 import { renderInventory } from './inventory.js';
+import { generateId, debounce, upsert, formatDate } from './utils.js';
 
 // =========================================
 // ESTADO TEMPORAL PARA ACTIVIDADES EN MODAL
@@ -90,16 +91,16 @@ export function renderEventsModule(container, data) {
     </div>
     `;
 
-    // Search filter for events
+    // Search filter for events (con debounce)
     const searchInput = document.getElementById('events-search');
     if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
+        searchInput.addEventListener('input', debounce((e) => {
             const term = e.target.value.toLowerCase();
             document.querySelectorAll('#events-grid .dashboard-card').forEach(card => {
                 const name = card.dataset.eventName || '';
                 card.style.display = name.includes(term) ? '' : 'none';
             });
-        });
+        }, 150));
     }
 }
 
@@ -169,16 +170,16 @@ window.viewEventDetail = (eventId) => {
         </div>
         `;
 
-        // Search within event
+        // Search within event (con debounce)
         const searchInput = document.getElementById('event-detail-search');
         if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
+            searchInput.addEventListener('input', debounce((e) => {
                 const term = e.target.value.toLowerCase();
                 document.querySelectorAll('.timeline-item').forEach(item => {
                     const text = item.textContent.toLowerCase();
                     item.style.display = text.includes(term) ? '' : 'none';
                 });
-            });
+            }, 150));
         }
 
         window.renderTimeline(eventId);
@@ -200,7 +201,7 @@ window.renderTimeline = (eventId) => {
             .filter(a => a.eventId === eventId)
             .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
 
-        const generalItems = dbData.items.filter(i => i.eventId === eventId && !i.activityId);
+        const generalItems = dbData.items.filter(i => i.eventId === eventId && (!i.activityIds || i.activityIds.length === 0));
         const area = document.getElementById('event-content-area');
 
         let html = '<div class="timeline">';
@@ -231,7 +232,7 @@ window.renderTimeline = (eventId) => {
 
         // 2. Actividades Cronometradas
         activities.forEach(act => {
-            const actItems = dbData.items.filter(i => i.activityId === act.id);
+            const actItems = dbData.items.filter(i => (i.activityIds || []).includes(act.id));
             html += `
             <div class="timeline-item">
                 <div class="timeline-dot"></div>
@@ -341,30 +342,53 @@ window.bulkMoveToActivity = (eventId) => {
         const activities = (dbData.activities || []).filter(a => a.eventId === eventId);
 
         const html = `
-            <div style="margin-bottom:1rem; color:var(--text-muted);">Mover <strong>${checkedIds.length}</strong> ítem(s) a:</div>
-            <select id="bulk-target-activity" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px; margin-bottom:1.5rem; font-size:1rem;">
-                <option value="">-- General / Todo el Evento --</option>
-                ${activities.map(a => `<option value="${a.id}">${a.startTime || ''} - ${a.name}</option>`).join('')}
-            </select>
-            <button id="btn-bulk-move" class="btn btn-primary" style="width:100%;">
-                <i class="ph ph-arrows-left-right"></i> Mover
-            </button>
+            <div style="margin-bottom:1rem; color:var(--text-muted);">Asignar <strong>${checkedIds.length}</strong> ítem(s) a:</div>
+            <div style="display:flex; gap:8px; margin-bottom:1rem;">
+                <button id="btn-bulk-clear" class="btn btn-white" style="flex:1;">Limpiar Actividades</button>
+                <button id="btn-bulk-add" class="btn btn-primary" style="flex:1;">Agregar a Actividades</button>
+            </div>
+            <div id="activity-selection" style="border:1px solid var(--border); border-radius:8px; padding:10px; max-height:200px; overflow-y:auto;">
+                ${activities.map(a => `
+                    <label style="display:flex; align-items:center; padding:8px; cursor:pointer;">
+                        <input type="checkbox" class="bulk-act-check" value="${a.id}" style="width:1rem; height:1rem; margin-right:8px; accent-color:var(--primary);">
+                        <span>${a.startDate || '??-??-??'} ${a.startTime || '??:??'} - ${a.name}</span>
+                    </label>
+                `).join('')}
+            </div>
         `;
 
-        window.app.openModal('Mover a Actividad', html, () => {});
+        window.app.openModal('Asignar a Actividades', html, () => {});
 
-        document.getElementById('btn-bulk-move').onclick = async () => {
-            const targetActId = document.getElementById('bulk-target-activity').value || null;
-
+        document.getElementById('btn-bulk-clear').onclick = async () => {
             dbData.items.forEach(item => {
                 if (checkedIds.includes(item.id)) {
-                    item.activityId = targetActId;
+                    item.activityIds = [];
                 }
             });
 
             await saveItems(dbData.items);
             window.app.closeModal();
-            window.app.showToast(`${checkedIds.length} ítems movidos`);
+            window.app.showToast(`${checkedIds.length} ítems sin actividades asignadas`);
+            window.viewEventDetail(eventId);
+        };
+
+        document.getElementById('btn-bulk-add').onclick = async () => {
+            const selectedActivityIds = Array.from(document.querySelectorAll('.bulk-act-check:checked')).map(c => c.value);
+            if (selectedActivityIds.length === 0) {
+                window.app.showToast('Selecciona al menos una actividad');
+                return;
+            }
+
+            dbData.items.forEach(item => {
+                if (checkedIds.includes(item.id)) {
+                    const current = item.activityIds || [];
+                    item.activityIds = [...new Set([...current, ...selectedActivityIds])];
+                }
+            });
+
+            await saveItems(dbData.items);
+            window.app.closeModal();
+            window.app.showToast(`${checkedIds.length} ítems asignados a ${selectedActivityIds.length} actividades`);
             window.viewEventDetail(eventId);
         };
     });
@@ -384,7 +408,7 @@ window.bulkRemoveItems = (eventId) => {
                 dbData.items.forEach(item => {
                     if (checkedIds.includes(item.id)) {
                         item.eventId = null;
-                        item.activityId = null;
+                        item.activityIds = [];
                         item.status = 'disponible';
                     }
                 });
@@ -409,9 +433,9 @@ window.clearGeneralItems = (eventId) => {
         async () => {
             import('./app.js').then(async ({ dbData }) => {
                 dbData.items.forEach(item => {
-                    if (item.eventId === eventId && !item.activityId) {
+                    if (item.eventId === eventId && (!item.activityIds || item.activityIds.length === 0)) {
                         item.eventId = null;
-                        item.activityId = null;
+                        item.activityIds = [];
                         item.status = 'disponible';
                     }
                 });
@@ -492,11 +516,12 @@ window.importFromGeneralInventory = (eventId, activityId = null) => {
             if (ids.length === 0) return window.app.showToast('Selecciona al menos un ítem');
 
             const targetAct = activityId || (document.getElementById('import-target-activity')?.value || null);
+            const targetActIds = targetAct ? [targetAct] : [];
 
             dbData.items.forEach(item => {
                 if (ids.includes(item.id)) {
                     item.eventId = eventId;
-                    item.activityId = targetAct;
+                    item.activityIds = targetActIds;
                     item.status = 'en uso';
                 }
             });
@@ -566,7 +591,7 @@ window.modalEvent = (id = null) => {
         `;
 
         window.app.openModal(id ? 'Editar Evento' : 'Nuevo Evento', html, async () => {
-            const eventId = document.getElementById('event-id').value || Date.now().toString();
+            const eventId = document.getElementById('event-id').value || generateId();
             const newEvent = {
                 id: eventId,
                 name: document.getElementById('event-name').value,
@@ -575,14 +600,12 @@ window.modalEvent = (id = null) => {
                 color: document.getElementById('event-color').value
             };
 
-            const idx = dbData.events.findIndex(e => e.id === newEvent.id);
-            if (idx >= 0) dbData.events[idx] = newEvent;
-            else dbData.events.push(newEvent);
+            upsert(dbData.events, newEvent);
 
             // Guardar actividades temporales
             tempActivities.forEach(act => {
                 act.eventId = eventId;
-                if (!act.id) act.id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                if (!act.id) act.id = generateId();
             });
 
             if (!dbData.activities) dbData.activities = [];
@@ -619,7 +642,7 @@ function renderModalActivities() {
             <div style="width:8px; height:8px; border-radius:50%; background:var(--primary); flex-shrink:0;"></div>
             <div style="flex:1; min-width:0;">
                 <div style="font-weight:600; font-size:0.95rem;">${act.name}</div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">${act.startTime || '??:??'} - ${act.endTime || '??:??'}${act.description ? ' | ' + act.description : ''}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">${act.startDate || '??-??-??'} ${act.startTime || '??:??'} - ${act.endTime || '??:??'}${act.description ? ' | ' + act.description : ''}</div>
             </div>
             <button type="button" onclick="window.editTempActivity(${idx})" class="btn-icon" title="Editar"><i class="ph ph-pencil-simple"></i></button>
             <button type="button" onclick="window.removeTempActivity(${idx})" class="btn-icon" style="color:var(--danger);" title="Eliminar"><i class="ph ph-trash"></i></button>
@@ -644,6 +667,14 @@ window.addTempActivity = () => {
             <div>
                 <label style="font-size:0.8rem; font-weight:600;">Descripción</label>
                 <input type="text" id="temp-act-desc" placeholder="Notas..." style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Fecha Inicio</label>
+                <input type="date" id="temp-act-start-date" style="padding:0.5rem; font-size:0.9rem;">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; font-weight:600;">Fecha Fin</label>
+                <input type="date" id="temp-act-end-date" style="padding:0.5rem; font-size:0.9rem;">
             </div>
             <div>
                 <label style="font-size:0.8rem; font-weight:600;">Hora Inicio</label>
@@ -671,9 +702,11 @@ window.addTempActivity = () => {
         if (!name) return alert('El nombre es obligatorio');
 
         tempActivities.push({
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            id: generateId(),
             name,
             description: document.getElementById('temp-act-desc').value,
+            startDate: document.getElementById('temp-act-start-date').value,
+            endDate: document.getElementById('temp-act-end-date').value,
             startTime: document.getElementById('temp-act-start').value,
             endTime: document.getElementById('temp-act-end').value,
             eventId: document.getElementById('event-id')?.value || ''
@@ -693,6 +726,8 @@ window.editTempActivity = (idx) => {
     // Rellenar datos
     document.getElementById('temp-act-name').value = act.name || '';
     document.getElementById('temp-act-desc').value = act.description || '';
+    document.getElementById('temp-act-start-date').value = act.startDate || '';
+    document.getElementById('temp-act-end-date').value = act.endDate || '';
     document.getElementById('temp-act-start').value = act.startTime || '';
     document.getElementById('temp-act-end').value = act.endTime || '';
 
@@ -707,6 +742,8 @@ window.editTempActivity = (idx) => {
             ...tempActivities[idx],
             name,
             description: document.getElementById('temp-act-desc').value,
+            startDate: document.getElementById('temp-act-start-date').value,
+            endDate: document.getElementById('temp-act-end-date').value,
             startTime: document.getElementById('temp-act-start').value,
             endTime: document.getElementById('temp-act-end').value
         };
@@ -765,13 +802,15 @@ window.importActivitiesFromOtherEvent = () => {
                     <label style="display:flex; align-items:center; padding:10px; border:1px solid var(--border); border-radius:6px; margin-bottom:4px; cursor:pointer; background:white; transition:background 0.15s;">
                         <input type="checkbox" class="import-act-check"
                             data-name="${a.name}"
+                            data-start-date="${a.startDate || ''}"
+                            data-end-date="${a.endDate || ''}"
                             data-start="${a.startTime || ''}"
                             data-end="${a.endTime || ''}"
                             data-desc="${a.description || ''}"
                             style="width:1.1rem; height:1.1rem; margin-right:12px; accent-color:var(--primary);">
                         <div>
                             <div style="font-weight:600; font-size:0.9rem;">${a.name}</div>
-                            <div style="font-size:0.8rem; color:var(--text-muted);">${a.startTime || '??:??'} - ${a.endTime || '??:??'}${a.description ? ' | ' + a.description : ''}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted);">${a.startDate || '??-??-??'} ${a.startTime || '??:??'} - ${a.endTime || '??:??'}${a.description ? ' | ' + a.description : ''}</div>
                         </div>
                     </label>`;
             });
@@ -802,8 +841,10 @@ window.importActivitiesFromOtherEvent = () => {
 
             checks.forEach(c => {
                 tempActivities.push({
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    id: generateId(),
                     name: c.dataset.name,
+                    startDate: c.dataset.startDate,
+                    endDate: c.dataset.endDate,
                     startTime: c.dataset.start,
                     endTime: c.dataset.end,
                     description: c.dataset.desc,
@@ -834,6 +875,14 @@ window.modalActivity = (eventId, activityId = null) => {
                     <input type="text" id="act-name" value="${act.name || ''}" required placeholder="Ej: Caminata sobre fuego">
                 </div>
                 <div class="form-group">
+                    <label>Fecha Inicio</label>
+                    <input type="date" id="act-start-date" value="${act.startDate || ''}">
+                </div>
+                <div class="form-group">
+                    <label>Fecha Fin</label>
+                    <input type="date" id="act-end-date" value="${act.endDate || ''}">
+                </div>
+                <div class="form-group">
                     <label>Hora Inicio</label>
                     <input type="time" id="act-start" value="${act.startTime || ''}">
                 </div>
@@ -853,18 +902,18 @@ window.modalActivity = (eventId, activityId = null) => {
 
         window.app.openModal(activityId ? 'Editar Actividad' : 'Nueva Actividad', html, async () => {
             const newAct = {
-                id: activityId || Date.now().toString(),
+                id: activityId || generateId(),
                 eventId: eventId,
                 name: document.getElementById('act-name').value,
+                startDate: document.getElementById('act-start-date').value,
+                endDate: document.getElementById('act-end-date').value,
                 startTime: document.getElementById('act-start').value,
                 endTime: document.getElementById('act-end').value,
                 description: document.getElementById('act-desc').value
             };
 
             if (!dbData.activities) dbData.activities = [];
-            const idx = dbData.activities.findIndex(a => a.id === newAct.id);
-            if (idx >= 0) dbData.activities[idx] = newAct;
-            else dbData.activities.push(newAct);
+            upsert(dbData.activities, newAct);
 
             await saveActivities(dbData.activities);
             window.app.showToast("Actividad guardada");
@@ -888,7 +937,7 @@ window.deleteEvent = (id) => {
             dbData.items.forEach(i => {
                 if(i.eventId === id) {
                     i.eventId = null;
-                    i.activityId = null;
+                    i.activityIds = [];
                     i.status = 'disponible';
                     itemsModified = true;
                 }
@@ -912,8 +961,8 @@ window.deleteActivity = (actId, eventId) => {
             dbData.activities = dbData.activities.filter(a => a.id !== actId);
             let itemsModified = false;
             dbData.items.forEach(i => {
-                if(i.activityId === actId) {
-                    i.activityId = null;
+                if((i.activityIds || []).includes(actId)) {
+                    i.activityIds = i.activityIds.filter(id => id !== actId);
                     itemsModified = true;
                 }
             });
@@ -936,7 +985,7 @@ window.assignItemsToActivity = (eventId, activityId) => {
     import('./app.js').then(({ dbData }) => {
         const availableItems = dbData.items.filter(i =>
             (!i.eventId && i.status === 'disponible') ||
-            (i.eventId === eventId && !i.activityId)
+            (i.eventId === eventId && (!i.activityIds || i.activityIds.length === 0))
         );
 
         if(availableItems.length === 0) return window.app.showToast("No hay items disponibles para asignar");
@@ -991,7 +1040,8 @@ window.assignItemsToActivity = (eventId, activityId) => {
             dbData.items.forEach(item => {
                 if(ids.includes(item.id)) {
                     item.eventId = eventId;
-                    item.activityId = activityId;
+                    const current = item.activityIds || [];
+                    item.activityIds = [...new Set([...current, activityId])];
                     item.status = 'en uso';
                 }
             });
@@ -1013,7 +1063,7 @@ window.downloadEventPDF = (eventId) => {
         const activities = (dbData.activities || [])
             .filter(a => a.eventId === eventId)
             .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
-        const generalItems = dbData.items.filter(i => i.eventId === eventId && !i.activityId);
+        const generalItems = dbData.items.filter(i => i.eventId === eventId && (!i.activityIds || i.activityIds.length === 0));
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
@@ -1046,7 +1096,7 @@ window.downloadEventPDF = (eventId) => {
         }
 
         activities.forEach(act => {
-            const actItems = dbData.items.filter(i => i.activityId === act.id);
+            const actItems = dbData.items.filter(i => (i.activityIds || []).includes(act.id));
 
             if (finalY > 250) { doc.addPage(); finalY = 20; }
 

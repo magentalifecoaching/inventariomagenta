@@ -1,4 +1,5 @@
-import { saveSuppliers } from './api.js';
+import { saveSuppliers, saveOneSupplier, deleteOneSupplier } from './api.js';
+import { generateId, debounce, upsert } from './utils.js';
 
 const CATEGORIES = ['Audio', 'Video', 'Iluminación', 'Mobiliario', 'Catering', 'Transporte', 'Personal', 'Otro'];
 
@@ -116,7 +117,7 @@ function setupSupplierFilters() {
         });
     };
 
-    searchInput.addEventListener('keyup', filterFn);
+    searchInput.addEventListener('keyup', debounce(filterFn, 150));
     categorySelect.addEventListener('change', filterFn);
 }
 
@@ -175,7 +176,7 @@ window.modalAddSupplier = (supplierId = null) => {
 
         window.app.openModal(supplierId ? 'Editar Proveedor' : 'Nuevo Proveedor', html, async () => {
             const newSupplier = {
-                id: document.getElementById('supplier-id').value || Date.now().toString(),
+                id: document.getElementById('supplier-id').value || generateId(),
                 name: document.getElementById('supplier-name').value,
                 contact: document.getElementById('supplier-contact').value,
                 phone: document.getElementById('supplier-phone').value,
@@ -186,11 +187,8 @@ window.modalAddSupplier = (supplierId = null) => {
 
             if (!dbData.suppliers) dbData.suppliers = [];
 
-            const idx = dbData.suppliers.findIndex(s => s.id === newSupplier.id);
-            if (idx >= 0) dbData.suppliers[idx] = newSupplier;
-            else dbData.suppliers.push(newSupplier);
-
-            await saveSuppliers(dbData.suppliers);
+            upsert(dbData.suppliers, newSupplier);
+            await saveOneSupplier(newSupplier);
 
             window.app.showToast("Proveedor guardado exitosamente");
             window.app.closeModal();
@@ -203,7 +201,7 @@ window.deleteSupplier = (id) => {
     window.app.confirm('¿Eliminar proveedor?', 'No podrás recuperarlo.', 'Eliminar', 'var(--danger)', async () => {
         import('./app.js').then(async ({ dbData }) => {
             dbData.suppliers = (dbData.suppliers || []).filter(s => s.id !== id);
-            await saveSuppliers(dbData.suppliers);
+            await deleteOneSupplier(id);
             window.app.showToast("Proveedor eliminado");
             window.app.reloadCurrentView();
         });

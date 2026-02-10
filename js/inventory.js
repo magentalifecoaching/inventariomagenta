@@ -1,4 +1,5 @@
 import { saveItems, savePeople, saveAreas, saveEvents } from './api.js';
+import { generateId, debounce, upsert, todayISO } from './utils.js';
 
 export function renderInventory(container, data, filterFn = null) {
     let items = data.items;
@@ -82,14 +83,30 @@ export function renderInventory(container, data, filterFn = null) {
 function renderRow(item, data) {
     const areaName = data.areas.find(a => a.id === item.areaId)?.name || '-';
     const eventName = data.events.find(e => e.id === item.eventId)?.name;
-    const activityName = data.activities ? data.activities.find(a => a.id === item.activityId)?.name : null;
+    
+    // Soporte para múltiples actividades
+    const activityIds = item.activityIds || (item.activityId ? [item.activityId] : []);
+    const activityNames = activityIds.map(actId => 
+        data.activities ? data.activities.find(a => a.id === actId)?.name : null
+    ).filter(Boolean);
+    
     const personName = data.people.find(p => p.id === item.personId)?.name || '-';
     
-    // Lógica de Ubicación: Muestra Evento y Actividad si existe
+    // Indicador visual si está en múltiples actividades
+    const multiActivityBadge = activityNames.length > 1 ? 
+        `<div style="font-size:0.7rem; background:var(--warning); color:white; padding:2px 6px; border-radius:3px; margin-top:2px; font-weight:600;">Usándose en ${activityNames.length} actividades</div>` 
+        : '';
+    
+    // Lógica de Ubicación: Muestra Evento y Actividades si existen
     let locationHtml = `<span style="color:var(--text-muted);">${areaName}</span>`;
     
     if (eventName) {
-        let subText = activityName ? `<br><span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;">↳ ${activityName}</span>` : '';
+        let subText = '';
+        if (activityNames.length === 1) {
+            subText = `<br><span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;">↳ ${activityNames[0]}</span>`;
+        } else if (activityNames.length > 1) {
+            subText = `<br><span style="font-size:0.7rem; color:var(--warning); font-weight:600;">⚠ Múltiples (${activityNames.length})</span>`;
+        }
         locationHtml = `<span style="color:var(--purple); font-weight:600; line-height:1.2;">
             <i class="ph ph-calendar"></i> ${eventName}
             ${subText}
@@ -106,7 +123,7 @@ function renderRow(item, data) {
         data-status="${item.status}"
         data-area="${item.areaId}">
 
-        <td data-label="Ítem" style="font-weight:600; color:var(--text-main);">${item.name}</td>
+        <td data-label="Ítem" style="font-weight:600; color:var(--text-main);">${item.name}${multiActivityBadge}</td>
         <td data-label="Marca" style="color:var(--text-muted);">${item.brand || '-'}</td>
         <td data-label="Stock">${item.stock}</td>
         <td data-label="Estado"><span class="status-pill ${statusClass}">${item.status || 'N/A'}</span></td>
@@ -154,7 +171,7 @@ function setupFilters() {
         });
     };
 
-    searchInput.addEventListener('keyup', filterFn);
+    searchInput.addEventListener('keyup', debounce(filterFn, 150));
     statusSelect.addEventListener('change', filterFn);
     areaSelect.addEventListener('change', filterFn);
 }
@@ -241,10 +258,9 @@ window.modalAddItem = (itemId = null) => {
                 </div>
 
                 <div class="full-width hidden" id="item-activity-container" style="background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border);">
-                    <label style="color:var(--primary);">↳ Asignar a Actividad del Evento:</label>
-                    <select id="item-activity" style="margin-top:5px;">
-                        <option value="">-- General / Todo el Evento --</option>
-                        </select>
+                    <label style="color:var(--primary);">↳ Asignar a Actividades del Evento (selecciona varias):</label>
+                    <div id="item-activities-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto;">
+                    </div>
                 </div>
 
                 <div class="full-width" style="margin-top:1rem;">
@@ -257,7 +273,7 @@ window.modalAddItem = (itemId = null) => {
 
         window.app.openModal(itemId ? 'Editar Ítem' : 'Nuevo Ítem', html, async () => {
             const newItem = {
-                id: document.getElementById('item-id').value || Date.now().toString(),
+                id: document.getElementById('item-id').value || generateId(),
                 name: document.getElementById('item-name').value,
                 brand: document.getElementById('item-brand').value,
                 stock: parseInt(document.getElementById('item-stock').value),
@@ -266,13 +282,10 @@ window.modalAddItem = (itemId = null) => {
                 areaId: document.getElementById('item-area').value,
                 personId: document.getElementById('item-person').value,
                 eventId: document.getElementById('item-event').value || null,
-                activityId: document.getElementById('item-activity').value || null // NUEVO
+                activityIds: Array.from(document.querySelectorAll('input[name="item-activity-check"]:checked')).map(c => c.value)
             };
             
-            const idx = dbData.items.findIndex(i => i.id === newItem.id);
-            if (idx >= 0) dbData.items[idx] = newItem;
-            else dbData.items.push(newItem);
-            
+            upsert(dbData.items, newItem);
             await saveItems(dbData.items);
             
             window.app.showToast("Ítem guardado exitosamente");
@@ -281,12 +294,12 @@ window.modalAddItem = (itemId = null) => {
 
         // --- LÓGICA DINÁMICA DE ACTIVIDADES ---
         const eventSelect = document.getElementById('item-event');
-        const activitySelect = document.getElementById('item-activity');
+        const activitiesListDiv = document.getElementById('item-activities-list');
         const activityContainer = document.getElementById('item-activity-container');
 
-        // Función para llenar actividades
-        const populateActivities = (eventId, selectedActId = null) => {
-            activitySelect.innerHTML = '<option value="">-- General / Todo el Evento --</option>';
+        // Función para llenar actividades con checkboxes
+        const populateActivities = (eventId, selectedActIds = []) => {
+            activitiesListDiv.innerHTML = '';
             
             if (!eventId) {
                 activityContainer.classList.add('hidden');
@@ -297,11 +310,14 @@ window.modalAddItem = (itemId = null) => {
             
             if (eventActivities.length > 0) {
                 eventActivities.forEach(act => {
-                    const opt = document.createElement('option');
-                    opt.value = act.id;
-                    opt.text = `${act.startTime || ''} - ${act.name}`;
-                    if (act.id === selectedActId) opt.selected = true;
-                    activitySelect.appendChild(opt);
+                    const isChecked = selectedActIds.includes(act.id);
+                    const label = document.createElement('label');
+                    label.style = 'display:flex; align-items:center; cursor:pointer; padding:6px; border-radius:4px; transition:background 0.15s;';
+                    label.innerHTML = `
+                        <input type="checkbox" name="item-activity-check" value="${act.id}" ${isChecked ? 'checked' : ''} style="width:1rem; height:1rem; margin-right:8px; accent-color:var(--primary);">
+                        <span style="font-size:0.9rem;">${act.startDate || '??-??-??'} ${act.startTime || '??:??'} - ${act.name}</span>
+                    `;
+                    activitiesListDiv.appendChild(label);
                 });
                 activityContainer.classList.remove('hidden');
             } else {
@@ -314,7 +330,8 @@ window.modalAddItem = (itemId = null) => {
 
         // Carga inicial (si estamos editando)
         if (item.eventId) {
-            populateActivities(item.eventId, item.activityId);
+            const selectedActIds = item.activityIds || (item.activityId ? [item.activityId] : []);
+            populateActivities(item.eventId, selectedActIds);
         }
     });
 };
@@ -323,7 +340,7 @@ window.modalAddItem = (itemId = null) => {
 window.quickCreate = (type, targetSelectId) => {
     const container = document.getElementById('quick-create-container');
     let title = '', inputsHtml = '';
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
 
     if (type === 'person') {
         title = 'Nuevo Encargado';
@@ -366,7 +383,7 @@ window.quickCreate = (type, targetSelectId) => {
         if (!name) return alert("El nombre es obligatorio");
 
         const { dbData } = await import('./app.js'); 
-        let newId = Date.now().toString();
+        let newId = generateId();
         let newObj = null;
 
         if (type === 'person') {
@@ -420,7 +437,10 @@ window.deleteItem = (id) => {
 window.downloadInventoryExcel = () => {
     import('./app.js').then(({ dbData }) => {
         const exportData = dbData.items.map(i => {
-            const actName = dbData.activities ? dbData.activities.find(a => a.id === i.activityId)?.name : '';
+            const activityIds = i.activityIds || (i.activityId ? [i.activityId] : []);
+            const actNames = activityIds.map(actId => 
+                dbData.activities ? dbData.activities.find(a => a.id === actId)?.name : ''
+            ).filter(Boolean).join(', ');
             const evtName = dbData.events.find(e => e.id === i.eventId)?.name || 'N/A';
 
             return {
@@ -431,7 +451,7 @@ window.downloadInventoryExcel = () => {
                 Encargado: dbData.people.find(p => p.id === i.personId)?.name || 'N/A',
                 Area: dbData.areas.find(a => a.id === i.areaId)?.name || 'N/A',
                 Evento: evtName,
-                Actividad: actName || 'General'
+                Actividad: actNames || 'General'
             };
         });
         window.app.exportToExcel(exportData, 'Inventario_Completo');
@@ -598,7 +618,7 @@ window.confirmImport = async () => {
             if (existingPeople.has(key)) {
                 personId = existingPeople.get(key);
             } else {
-                personId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                personId = generateId();
                 dbData.people.push({ id: personId, name: item.personName });
                 existingPeople.set(key, personId);
             }
@@ -611,14 +631,14 @@ window.confirmImport = async () => {
             if (existingAreas.has(key)) {
                 areaId = existingAreas.get(key);
             } else {
-                areaId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                areaId = generateId();
                 dbData.areas.push({ id: areaId, name: item.areaName });
                 existingAreas.set(key, areaId);
             }
         }
 
         return {
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            id: generateId(),
             name: item.name,
             brand: item.brand,
             stock: item.stock,
@@ -627,7 +647,7 @@ window.confirmImport = async () => {
             personId: personId,
             areaId: areaId,
             eventId: null,
-            activityId: null
+            activityIds: []
         };
     });
 
