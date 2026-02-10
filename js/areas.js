@@ -204,6 +204,9 @@ window.viewAreaDetail = (id) => {
                     <button onclick="window.downloadAreaExcel('${id}')" class="btn btn-success">
                         <i class="ph ph-microsoft-excel-logo"></i> Excel
                     </button>
+                    <button onclick="window.showExportFormatModal('${id}')" class="btn btn-primary">
+                        <i class="ph ph-file-arrow-down"></i> Formato de entrada y salida
+                    </button>
                     <button onclick="window.importItemsToArea('${id}')" class="btn btn-white">
                         <i class="ph ph-download-simple"></i> Importar del Inventario
                     </button>
@@ -295,6 +298,111 @@ window.downloadAreaExcel = (areaId) => {
         window.app.exportToExcel(exportData, `Area_${area.name.replace(/\s+/g, '_')}`);
     });
 };
+
+// NUEVA FUNCIONALIDAD: MODAL Y EXPORTACIÓN DE FORMATO
+window.showExportFormatModal = (areaId) => {
+    import('./app.js').then(({ dbData }) => {
+        const events = dbData.events || [];
+        if (events.length === 0) {
+            return window.app.showToast("No hay eventos disponibles para seleccionar.");
+        }
+
+        const html = `
+            <div id="export-format-form">
+                <div class="form-group">
+                    <label style="font-size:1rem; margin-bottom:0.5rem;">Seleccionar Evento</label>
+                    <select id="event-selector" class="form-control" style="width:100%; padding: 0.8rem; font-size:1rem;">
+                        <option value="">-- Seleccione un evento --</option>
+                        ${events.map(event => `<option value="${event.id}">${event.name} (${event.startDate})</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-top:1rem;">
+                    <label>Fecha del Evento Seleccionado</label>
+                    <p id="selected-event-date" style="font-weight:bold; color:var(--text-main); margin-top:0.25rem;">N/A</p>
+                </div>
+                <div style="margin-top:2rem;">
+                    <button id="btn-download-format" class="btn btn-primary" style="width:100%; padding:1rem;" disabled>
+                        <i class="ph ph-download-simple"></i> Descargar Formato
+                    </button>
+                </div>
+            </div>
+        `;
+
+        window.app.openModal('Generar Formato de Entrada/Salida', html, () => {});
+
+        const eventSelector = document.getElementById('event-selector');
+        const dateDisplay = document.getElementById('selected-event-date');
+        const downloadBtn = document.getElementById('btn-download-format');
+
+        eventSelector.addEventListener('change', () => {
+            const selectedEventId = eventSelector.value;
+            if (selectedEventId) {
+                const selectedEvent = events.find(e => e.id === selectedEventId);
+                dateDisplay.textContent = selectedEvent.startDate || 'Fecha no definida';
+                downloadBtn.disabled = false;
+            } else {
+                dateDisplay.textContent = 'N/A';
+                downloadBtn.disabled = true;
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const selectedEventId = eventSelector.value;
+            window.generateAndDownloadFormat(areaId, selectedEventId);
+        });
+    });
+};
+
+window.generateAndDownloadFormat = (areaId, eventId) => {
+    import('./app.js').then(({ dbData }) => {
+        const area = dbData.areas.find(a => a.id === areaId);
+        const event = dbData.events.find(e => e.id === eventId);
+        const items = dbData.items.filter(i => i.areaId === areaId);
+
+        if (!area || !event) {
+            return window.app.showToast("Error: Área o evento no encontrado.");
+        }
+
+        const data = [
+            ["", "CONTROL DE SALIDA Y ENTRADA DE MATERIALES, EQUIPOS Y HERRAMIENTAS"],
+            [],
+            ["", "", "", "Código:", "FO-AMD-01"],
+            ["", "", "", "Versión:", 1],
+            ["", "", "", "Fecha:", "2/29/2024"],
+            [],
+            ["Fecha del retiro:", event.startDate || ""],
+            ["Lugar:", ""],
+            ["Actividad:", ""],
+            [],
+            ["Nombre del elemento del área", "Cantidad", "Estado de salida", "Estado de llegada"],
+            ...items.map(item => [item.name, item.stock, "", ""])
+        ];
+
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        // Ajustar anchos de columnas
+        ws['!cols'] = [
+            { wch: 40 }, // Nombre del elemento
+            { wch: 10 }, // Cantidad
+            { wch: 25 }, // Estado de salida
+            { wch: 25 }  // Estado de llegada
+        ];
+        
+        // Unir celdas para el título
+        ws['!merges'] = [
+            { s: { r: 0, c: 1 }, e: { r: 0, c: 3 } } // Fusionar B1 a D1 para el título
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Control");
+
+        XLSX.writeFile(wb, "control de salida y entrada de materiales, equipos y herramientas.xlsx");
+        
+        window.app.closeModal();
+        window.app.showToast("El formato se ha descargado correctamente.");
+    });
+};
+
 
 // 7. Importar ítems del inventario general a un área
 window.importItemsToArea = (areaId) => {
