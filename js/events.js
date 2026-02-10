@@ -199,7 +199,11 @@ window.renderTimeline = (eventId) => {
     import('./app.js').then(({ dbData }) => {
         const activities = (dbData.activities || [])
             .filter(a => a.eventId === eventId)
-            .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+            .sort((a, b) => {
+                const dateA = (a.startDate || '9999-99-99') + ' ' + (a.startTime || '00:00');
+                const dateB = (b.startDate || '9999-99-99') + ' ' + (b.startTime || '00:00');
+                return dateA.localeCompare(dateB);
+            });
 
         const generalItems = dbData.items.filter(i => i.eventId === eventId && (!i.activityIds || i.activityIds.length === 0));
         const area = document.getElementById('event-content-area');
@@ -236,7 +240,7 @@ window.renderTimeline = (eventId) => {
             html += `
             <div class="timeline-item">
                 <div class="timeline-dot"></div>
-                <span class="timeline-time">${act.startTime || '??:??'} - ${act.endTime || '??:??'}</span>
+                <span class="timeline-time">${act.startDate ? formatDate(act.startDate) + ' ' : ''}${act.startTime || '??:??'} - ${act.endDate && act.endDate !== act.startDate ? formatDate(act.endDate) + ' ' : ''}${act.endTime || '??:??'}</span>
 
                 <div style="display:flex; justify-content:space-between; align-items:start;">
                     <div>
@@ -1062,7 +1066,11 @@ window.downloadEventPDF = (eventId) => {
         const event = dbData.events.find(e => e.id === eventId);
         const activities = (dbData.activities || [])
             .filter(a => a.eventId === eventId)
-            .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+            .sort((a, b) => {
+                const dateA = (a.startDate || '9999-99-99') + ' ' + (a.startTime || '00:00');
+                const dateB = (b.startDate || '9999-99-99') + ' ' + (b.startTime || '00:00');
+                return dateA.localeCompare(dateB);
+            });
         const generalItems = dbData.items.filter(i => i.eventId === eventId && (!i.activityIds || i.activityIds.length === 0));
 
         const { jsPDF } = window.jspdf;
@@ -1102,7 +1110,8 @@ window.downloadEventPDF = (eventId) => {
 
             doc.setFontSize(12);
             doc.setTextColor(59, 130, 246);
-            doc.text(`${act.startTime || '??:??'} - ${act.endTime || '??:??'} | ${act.name}`, 14, finalY + 10);
+            const actDateStr = act.startDate ? formatDate(act.startDate) + ' ' : '';
+            doc.text(`${actDateStr}${act.startTime || '??:??'} - ${act.endTime || '??:??'} | ${act.name}`, 14, finalY + 10);
 
             if (act.description) {
                 doc.setFontSize(10);

@@ -287,7 +287,8 @@ window.modalAddItem = (itemId = null) => {
             
             upsert(dbData.items, newItem);
             await saveItems(dbData.items);
-            
+
+            window.app.closeModal();
             window.app.showToast("Ítem guardado exitosamente");
             window.app.reloadCurrentView();
         });
@@ -313,9 +314,10 @@ window.modalAddItem = (itemId = null) => {
                     const isChecked = selectedActIds.includes(act.id);
                     const label = document.createElement('label');
                     label.style = 'display:flex; align-items:center; cursor:pointer; padding:6px; border-radius:4px; transition:background 0.15s;';
+                    const actDate = act.startDate ? new Date(act.startDate + 'T00:00:00').toLocaleDateString('es', { day:'2-digit', month:'2-digit', year:'numeric' }) : '??/??/????';
                     label.innerHTML = `
                         <input type="checkbox" name="item-activity-check" value="${act.id}" ${isChecked ? 'checked' : ''} style="width:1rem; height:1rem; margin-right:8px; accent-color:var(--primary);">
-                        <span style="font-size:0.9rem;">${act.startDate || '??-??-??'} ${act.startTime || '??:??'} - ${act.name}</span>
+                        <span style="font-size:0.9rem;">${actDate} ${act.startTime || '??:??'} - ${act.name}</span>
                     `;
                     activitiesListDiv.appendChild(label);
                 });
